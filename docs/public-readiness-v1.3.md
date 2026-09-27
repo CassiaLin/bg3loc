@@ -1,8 +1,8 @@
 # v1.3 Public Readiness Gate
 
-State: **NOT READY** (newcomer audit and local candidate clean-room checks completed, 2026-09-28)
+State: **READY FOR PUBLIC REMOTE** (final sanitized local export verified, 2026-09-28)
 
-This report assesses the v1.3 development branch as a potential public repository. It does not change repository visibility or release the 1.2.0-versioned candidate artifacts.
+This report assesses the new, local sanitized public candidate exported from canonical private source HEAD `5185acfe135d862d102dec13d4e055f5bfabb257`. The private canonical baseline was verified before export (464 passed, 75 subtests; one non-blocking Windows Pytest cache warning). This report does not change repository visibility or release the 1.2.0-versioned artifacts. The v1.3 version bump, tag, and release are intentionally deferred.
 
 ## Newcomer path
 
@@ -33,29 +33,33 @@ Common errors were triggered with fictional inputs: missing game reports the pat
 
 The full research artifact generation commands exist; no deleted or private acceptance workspace is needed as input. Coverage and structural enrichment still depend on the user's installed game resources. The separate spreadsheet workflow remains available for smaller/manual projects and does not claim to be the production mode.
 
+## Final sanitized history gate
+
+The current tracked tree was exported by `git archive`, without private `.git`, untracked files, workspace, build output, or caches, and initialized as a new root history. Public root commit: `f5ed51a98c82ef4b9ede4e383143930a7038b3a9`; public root tree: `a75d8342f7638cc851c3a16257f6730fff148133`. The final public HEAD is the commit containing this report; retrieve its exact self-referential SHA with `git rev-parse HEAD` (also recorded in the task handoff). No remote is configured. Private ancestry, including private commits `5185acf` and `919b207`, is absent. The forbidden historical object `c601b4c58af2064012fdbd6f2b171f28d35fb10b` and the historical `phase4ba_universe.py` blob are not reachable; mentions here document the exclusion, not Git reachability.
+
+The root has 316 reachable objects. Its largest blob is 105,244-byte `src/bg3loc/commands/research.py`, inspected as source code; it is the only blob over 100 KB. There are no blobs over 500 KB or 1 MB. No tracked PAK, LOCA, SQLite, real-corpus JSONL, research-preservation archive, canonical workspace, build directory, or virtual environment was found. The demo contains fabricated text and identifiers only. Secret keyword matches are code, environment-variable documentation, or intentionally fake test values; no credential was found. `CassiaLin` is the published author/repository identity, and `D:\SteamLibrary` in historical technical docs is an illustrative game path, not a required private path.
+
 ## Candidate package and clean-room verification
 
-The local source tree passed `python -m pytest -q`: **463 passed, 75 subtests passed, zero failures and warnings**. `python -m build` produced:
+The final sanitized source passed the focused relative-output demo regression (**1 passed**) and `python -m pytest -q`: **464 passed, 75 subtests passed, zero failures and warnings**. This confirms the canonical `root.resolve()` demo fix is present. `python -m build` produced:
 
 | Candidate | Purpose |
 | --- | --- |
 | `bg3loc-1.2.0-py3-none-any.whl` | Installable wheel |
 | `bg3loc-1.2.0.tar.gz` | Source distribution with docs and demo |
 
-These are local **candidate** artifacts, not a release. Final artifact sizes and SHA-256 hashes are recorded in the task handoff because embedding the sdist's own hash in a file inside that sdist would change the hash. The wheel contains installed code and runtime schemas; the sdist includes public docs, schemas, and the fictional demo. Neither archive includes a PAK, LOCA, SQLite DB, JSONL corpus, or workspace directory. Runtime dependencies are `jsonschema>=4.23,<5` and `openpyxl>=3.1,<4`; Python minimum is 3.11, with no local-path dependency.
+These are local **candidate** artifacts, not a release. The root-stage wheel was 278,860 bytes (SHA-256 `3B7C5E96074D72FE31E7012A78E23EF5B10F316A7C91BAD14DCCBADD6ADF8F77`); the root-stage sdist was 487,162 bytes (SHA-256 `9E8B6AF8B4866E983A9F3D7C6CFA2CCC8F3D8AE4A15B9FD352D643F0935692FD`). These root-stage artifacts passed the clean-room checks below. The sdist is rebuilt after this report commit so it contains the final report; its new exact SHA-256 is recorded in the task handoff, since embedding that value here would change the sdist itself. The wheel contains installed code and runtime schemas; the sdist includes public docs, schemas, and the fictional demo. Neither archive includes a PAK, LOCA, SQLite DB, JSONL corpus, or workspace directory. Runtime dependencies are `jsonschema>=4.23,<5` and `openpyxl>=3.1,<4`; Python minimum is 3.11, with no local-path dependency.
 
-A fresh private-branch GitHub clone was created in the requested clean-room directory. Two independent fresh virtual environments installed the candidate wheel and sdist. In each, `bg3loc --version`, command help, and the fictional demo passed from a separate work subdirectory in that clean room, not the original development repository; `bg3loc.__file__` resolved to that environment's `site-packages`. The remote clone was at the previous branch HEAD because publishing new commits to the private remote was rejected by automatic approval review. Candidate install tests used the locally built archives, not editable installs or copied generated data.
+Two independent fresh virtual environments installed only this export's candidate wheel and sdist. In each, `bg3loc --version`, command help, and the fictional demo passed from a separate working directory. The demo fixture was extracted from the sanitized sdist, not read from a source checkout at runtime; `bg3loc.__file__` resolved to each environment's `site-packages`. The loopback provider and fake archive adapter validate prepare → translation → QA → report → finalize, not a game-installable artifact. No private or public source checkout dependency was observed.
 
 ## Privacy and package audit
 
 Current tracked files contain no PAK, LOCA, SQLite DB, JSONL corpus, or generated workspace. Public-facing entry documents contain no author-specific absolute path or credential. The historical `D:\SteamLibrary` examples in older technical acceptance documents are illustrative game paths, not a required personal path. `CassiaLin` appears as the repository/issue URL and schema namespace. LICENSE is MIT; README points to the issue tracker and asks reporters to redact game data and secrets.
 
-**Public blocker: Git history.** An ancestor of this branch contains a 968,101-byte historical blob at `src/bg3loc/research/phase4ba_universe.py` (object `c601b4c58af2064012fdbd6f2b171f28d35fb10b`) with embedded compressed game-derived ContentUid/resource-reference data (`_DATA`). A later commit replaced it with live game extraction, so the current tree and candidate packages are clean, but a public clone would still obtain the historical object. Provenance/legal review and a deliberately coordinated history-clean publication path are required before making the repository public. This audit did not rewrite Git history.
-
-**Remote candidate not yet present.** Automatic approval review rejected pushing the local public-readiness commits to the private remote because that external export was not explicitly authorized. The clean-room clone therefore validated the remote baseline plus locally built candidate archives, not a fresh clone of the updated branch. After the history issue is resolved and the owner authorizes the publication path, synchronize the intended branch and repeat a clean clone test at that exact commit.
+**Public blockers: none in this local candidate.** The private repository retains its development history and has not been rewritten. A public remote, actual remote clone, v1.3 tag, and release have not been created; after an authorized push, repeat verification from the actual public remote.
 
 ## Gate decision
 
-**v1.3 Public Readiness = NOT READY.** The two blockers above must be cleared and the exact published branch retested. No repository visibility change was made.
+**Sanitized Final Public Candidate = READY FOR PUBLIC REMOTE.** No repository visibility change was made.
 
 Non-blocking product limits: no provider fallback, no global multi-worker quota coordination, no provider invoice reconciliation, and no paid-provider live smoke in this gate. Research mapping and full-game installation require the user's own game and archive tool; the fictional demo cannot verify either.
