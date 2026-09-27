@@ -1,0 +1,13 @@
+# Source distribution contents.
+# Keep public documentation and machine-readable contracts available when
+# users install or inspect BG3Loc from the sdist rather than a Git checkout.
+
+graft docs
+graft schemas
+graft examples
+
+include README.md
+include README.zh-TW.md
+include CHANGELOG.md
+include CHANGELOG.zh-TW.md
+include LICENSE

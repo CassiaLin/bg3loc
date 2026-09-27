@@ -1,0 +1,294 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CassiaLin/bg3loc/schemas/translation-package.schema.json",
+  "title": "BG3Loc E2E Translation Package Manifest",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "packageType",
+    "projectConfigSha256",
+    "evidenceProfile",
+    "translationStrategy",
+    "sourceLocale",
+    "targetLocale",
+    "referenceLocales",
+    "identityField",
+    "materialFormat",
+    "counts",
+    "sourceBinding",
+    "delivery",
+    "internal",
+    "validation"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "packageType": {
+      "const": "E2ETranslationPackage"
+    },
+    "projectConfigSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "evidenceProfile": {
+      "enum": [
+        "basic",
+        "context",
+        "full"
+      ]
+    },
+    "translationStrategy": {
+      "enum": [
+        "standard",
+        "blind-first"
+      ]
+    },
+    "sourceLocale": {
+      "type": "string",
+      "minLength": 1
+    },
+    "targetLocale": {
+      "type": "string",
+      "minLength": 1
+    },
+    "referenceLocales": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "identityField": {
+      "const": "ContentUid"
+    },
+    "materialFormat": {
+      "enum": [
+        "xlsx",
+        "csv",
+        "jsonl"
+      ]
+    },
+    "counts": {
+      "type": "object",
+      "required": [
+        "rows",
+        "uniqueContentUids",
+        "translationRequired"
+      ],
+      "properties": {
+        "rows": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "uniqueContentUids": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "translationRequired": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "sourceBinding": {
+      "type": "object",
+      "required": [
+        "extractManifestSha256"
+      ],
+      "properties": {
+        "extractManifestSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "researchSummarySha256": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "researchMappingsSha256": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "delivery": {
+      "type": "object",
+      "required": [
+        "materials",
+        "evidence",
+        "support"
+      ],
+      "properties": {
+        "materials": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/artifact"
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/artifact"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "evidenceType"
+                ],
+                "properties": {
+                  "evidenceType": {
+                    "enum": [
+                      "context",
+                      "bark",
+                      "quest",
+                      "ui-skill",
+                      "multilingual"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "support": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "internal": {
+      "type": "object",
+      "required": [
+        "immutable",
+        "comparison",
+        "bindings"
+      ],
+      "properties": {
+        "immutable": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/artifact"
+          }
+        },
+        "comparison": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact"
+          }
+        },
+        "bindings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "validation": {
+      "type": "object",
+      "required": [
+        "uniqueEditableIdentity",
+        "blindFirstDeliverySeparated",
+        "packageRelativePaths"
+      ],
+      "properties": {
+        "uniqueEditableIdentity": {
+          "type": "boolean"
+        },
+        "blindFirstDeliverySeparated": {
+          "type": "boolean"
+        },
+        "packageRelativePaths": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "scope": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "const": "all"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "contentUidCount",
+            "contentUidsSha256"
+          ],
+          "properties": {
+            "type": {
+              "const": "content-uids"
+            },
+            "contentUidCount": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "contentUidsSha256": {
+              "$ref": "#/$defs/sha256"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "artifact": {
+      "type": "object",
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "recordCount": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

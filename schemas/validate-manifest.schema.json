@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CassiaLin/bg3loc/schemas/validate-manifest.schema.json",
+  "title": "BG3Loc Validate Manifest",
+  "type": "object",
+  "required": ["schemaVersion", "buildManifest", "strict", "accepted", "rejected", "summary"],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "buildManifest": {"type": "string", "minLength": 1},
+    "strict": {"type": "boolean"},
+    "accepted": {
+      "type": "object",
+      "required": ["path", "recordCount"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "recordCount": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": true
+    },
+    "rejected": {
+      "type": "object",
+      "required": ["path", "recordCount"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "recordCount": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": true
+    },
+    "summary": {
+      "type": "object",
+      "required": ["status", "errorCount", "warningCount"],
+      "properties": {
+        "status": {"enum": ["pass", "fail", "partial"]},
+        "errorCount": {"type": "integer", "minimum": 0},
+        "warningCount": {"type": "integer", "minimum": 0},
+        "missingReturnRowCount": {"type": "integer", "minimum": 0},
+        "independentEvaluationCoverage": {"type": ["number", "null"], "minimum": 0, "maximum": 1}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CassiaLin/bg3loc/schemas/extract-manifest.schema.json",
+  "title": "BG3Loc Extract Manifest",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "scanManifest",
+    "sourceLocale",
+    "targetLocale",
+    "referenceLocales",
+    "backend",
+    "locales",
+    "aligned",
+    "roundtripValidation"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "scanManifest": {"type": "string", "minLength": 1},
+    "sourceLocale": {"type": "string", "minLength": 1},
+    "targetLocale": {"type": "string", "minLength": 1},
+    "referenceLocales": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "backend": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": true
+    },
+    "locales": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["localeId", "packageFile", "locaEntry", "sourceLoca", "sourceXml", "normalized", "nodeCount"],
+        "properties": {
+          "localeId": {"type": "string", "minLength": 1},
+          "packageFile": {"type": "string", "minLength": 1},
+          "locaEntry": {"type": "string", "minLength": 1},
+          "sourceLoca": {"type": "string", "minLength": 1},
+          "sourceXml": {"type": "string", "minLength": 1},
+          "normalized": {"type": "string", "minLength": 1},
+          "nodeCount": {"type": "integer", "minimum": 1}
+        },
+        "additionalProperties": true
+      }
+    },
+    "aligned": {"type": "string", "minLength": 1},
+    "roundtripValidation": {"type": "string", "minLength": 1}
+  },
+  "additionalProperties": true
+}

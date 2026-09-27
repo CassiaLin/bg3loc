@@ -1,0 +1,30 @@
+﻿{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CassiaLin/bg3loc/schemas/research/research-mapping.schema.json",
+  "title": "ResearchMappingRecord",
+  "type": "object",
+  "required": ["contentUid", "mappingType", "classification", "evidence"],
+  "properties": {
+    "contentUid": { "type": "string", "pattern": "^h[0-9a-f]{8}g[0-9a-f]{4}g[0-9a-f]{4}g[0-9a-f]{4}g[0-9a-f]{12}$" },
+    "mappingType": { "type": "string" },
+    "classification": { "type": "string" },
+    "version": { "type": "string" },
+    "reviewRequired": { "type": "boolean" },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["sourceRole", "resourcePath", "evidenceType", "ruleId"],
+        "properties": {
+          "sourceRole": { "type": "string" },
+          "resourcePath": { "type": "string" },
+          "evidenceType": { "type": "string" },
+          "ruleId": { "type": "string" },
+          "properties": { "type": "object" }
+        }
+      }
+    },
+    "metadata": { "type": "object" }
+  },
+  "additionalProperties": false
+}

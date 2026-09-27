@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CassiaLin/bg3loc/schemas/e2e-review-integration.schema.json",
+  "title": "BG3Loc E2E Review Integration Manifest",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "packageType",
+    "translationPackageSha256",
+    "baseTargetSha256",
+    "structural",
+    "qa",
+    "reconciliation",
+    "finalTarget",
+    "status"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "packageType": {
+      "const": "E2EReviewIntegration"
+    },
+    "translationPackageSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "structural": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/gate"
+      }
+    },
+    "qa": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/gate"
+      }
+    },
+    "reconciliation": {
+      "type": "object",
+      "required": [
+        "path",
+        "sha256",
+        "conflictCount"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "conflictCount": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "status": {
+      "enum": [
+        "pending",
+        "blocked",
+        "passed"
+      ]
+    },
+    "finalTarget": {
+      "type": "object",
+      "required": [
+        "path",
+        "sha256",
+        "recordCount"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "recordCount": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "baseTargetSha256": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "gate": {
+      "type": "object",
+      "required": [
+        "protocol",
+        "instanceId",
+        "resultsPath",
+        "resultsSha256",
+        "validationSha256",
+        "candidateCount",
+        "blockingCount",
+        "status"
+      ],
+      "properties": {
+        "protocol": {
+          "enum": [
+            "bark",
+            "quest",
+            "ui-skill",
+            "multilingual",
+            "taiwan-usage"
+          ]
+        },
+        "resultsPath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resultsSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "validationSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "candidateCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "blockingCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "blocked",
+            "passed"
+          ]
+        },
+        "instanceId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

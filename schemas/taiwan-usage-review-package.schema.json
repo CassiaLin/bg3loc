@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bg3loc.local/schemas/taiwan-usage-review-package.schema.json",
+  "title": "BG3Loc Taiwan Usage Review Package",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "packageType", "generatedAtUtc", "sourceLocale",
+    "targetLocale", "referenceLocales", "ruleId", "generationInputs",
+    "sourceEvidence", "counts", "artifacts", "rules", "candidates"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "packageType": {"const": "TaiwanUsageReviewPackage"},
+    "generatedAtUtc": {"type": "string", "minLength": 1},
+    "sourceLocale": {"type": "string", "minLength": 1},
+    "targetLocale": {"type": "string", "minLength": 1},
+    "referenceLocales": {"type": "array", "items": {"type": "string"}},
+    "ruleId": {"const": "BG3-TAIWAN-USAGE-HUMAN-REVIEW"},
+    "generationInputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "currentSourceLocale", "currentTargetLocale", "reviewerSuppliedRuleSet",
+        "historicalWorkbook", "historicalUidList", "historicalReviewDecision",
+        "bundledTaiwanLexicon"
+      ],
+      "properties": {
+        "currentSourceLocale": {"const": true},
+        "currentTargetLocale": {"const": true},
+        "reviewerSuppliedRuleSet": {"const": true},
+        "historicalWorkbook": {"const": false},
+        "historicalUidList": {"const": false},
+        "historicalReviewDecision": {"const": false},
+        "bundledTaiwanLexicon": {"const": false}
+      }
+    },
+    "sourceEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["extractManifest", "ruleSet", "ruleSetSha256"],
+      "properties": {
+        "extractManifest": {"type": "string", "minLength": 1},
+        "ruleSet": {"type": "string", "minLength": 1},
+        "ruleSetSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "findings", "categories", "rules"],
+      "properties": {
+        "total": {"type": "integer", "minimum": 0},
+        "findings": {"type": "integer", "minimum": 0},
+        "categories": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+        "rules": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}}
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "path", "sha256"],
+        "properties": {
+          "kind": {"const": "review"},
+          "path": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        }
+      }
+    },
+    "rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["rule_id", "kind", "pattern", "category", "rationale", "recommendation", "ignore_case"],
+        "properties": {
+          "rule_id": {"type": "string"},
+          "kind": {"enum": ["literal", "regex"]},
+          "pattern": {"type": "string"},
+          "category": {"type": "string"},
+          "rationale": {"type": "string"},
+          "recommendation": {"type": "string"},
+          "ignore_case": {"type": "boolean"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "candidate_id", "content_uid", "source_text", "target_text",
+          "findings", "protected_tokens", "finding_count"
+        ],
+        "properties": {
+          "candidate_id": {"type": "string", "minLength": 1},
+          "content_uid": {"type": "string", "minLength": 1},
+          "source_text": {"type": "string"},
+          "target_text": {"type": "string"},
+          "findings": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["rule_id", "category", "matched_text", "start", "end", "rationale", "recommendation"],
+              "properties": {
+                "rule_id": {"type": "string"},
+                "category": {"type": "string"},
+                "matched_text": {"type": "string"},
+                "start": {"type": "integer", "minimum": 0},
+                "end": {"type": "integer", "minimum": 0},
+                "rationale": {"type": "string"},
+                "recommendation": {"type": "string"}
+              }
+            }
+          },
+          "protected_tokens": {"type": "array", "items": {"type": "string"}},
+          "finding_count": {"type": "integer", "minimum": 1}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "1.0",
+  "currency": "USD",
+  "models": [
+    {
+      "provider": "example",
+      "model": "example-model",
+      "inputPerMillion": 1.0,
+      "outputPerMillion": 2.0
+    }
+  ],
+  "note": "Fictional example values only; not current pricing for any provider."
+}

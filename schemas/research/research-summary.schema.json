@@ -1,0 +1,17 @@
+﻿{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CassiaLin/bg3loc/schemas/research/research-summary.schema.json",
+  "title": "ResearchRunSummary",
+  "type": "object",
+  "required": ["buildId", "gameVersion", "researchSchemaVersion", "resourceCounts", "mappingCounts"],
+  "properties": {
+    "buildId": { "type": "string" },
+    "gameVersion": { "type": "string" },
+    "researchSchemaVersion": { "type": "string" },
+    "generatedAtUtc": { "type": "string" },
+    "resourceCounts": { "type": "object" },
+    "mappingCounts": { "type": "object" },
+    "warnings": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": true
+}

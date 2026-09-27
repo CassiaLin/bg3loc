@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CassiaLin/bg3loc/schemas/e2e-review-reconciliation.schema.json",
+  "title": "BG3Loc E2E Review Reconciliation Record",
+  "type": "object",
+  "required": [
+    "ContentUid",
+    "BaseTextSha256",
+    "ResolvedText",
+    "ResolvedTextSha256",
+    "ContributingReviewInstances",
+    "Resolution"
+  ],
+  "properties": {
+    "ContentUid": {
+      "type": "string",
+      "minLength": 1
+    },
+    "BaseTextSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "ResolvedText": {
+      "type": ["string", "null"]
+    },
+    "ResolvedTextSha256": {
+      "oneOf": [
+        {"$ref": "#/$defs/sha256"},
+        {"type": "null"}
+      ]
+    },
+    "ContributingReviewInstances": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "Resolution": {
+      "enum": [
+        "unchanged",
+        "adopted-review-revision",
+        "manual-conflict-resolution",
+        "conflict"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "Resolution": {"const": "conflict"}
+        },
+        "required": ["Resolution"]
+      },
+      "then": {
+        "properties": {
+          "ResolvedText": {"type": "null"},
+          "ResolvedTextSha256": {"type": "null"}
+        }
+      },
+      "else": {
+        "properties": {
+          "ResolvedText": {"type": "string"},
+          "ResolvedTextSha256": {"$ref": "#/$defs/sha256"}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "additionalProperties": false
+}

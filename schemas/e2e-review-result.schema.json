@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CassiaLin/bg3loc/schemas/e2e-review-result.schema.json",
+  "title": "BG3Loc E2E Normalized Review Result",
+  "type": "object",
+  "required": [
+    "ContentUid",
+    "Protocol",
+    "ReviewInstanceId",
+    "ReviewClass",
+    "Decision",
+    "BaseTextSha256",
+    "CandidateId",
+    "SourceValidationSha256"
+  ],
+  "properties": {
+    "ContentUid": {
+      "type": "string",
+      "minLength": 1
+    },
+    "Protocol": {
+      "enum": [
+        "bark",
+        "quest",
+        "ui-skill",
+        "multilingual",
+        "taiwan-usage"
+      ]
+    },
+    "ReviewClass": {
+      "enum": [
+        "structural",
+        "language-qa"
+      ]
+    },
+    "Decision": {
+      "enum": [
+        "pending",
+        "clear",
+        "revision-required",
+        "needs-context",
+        "insufficient-evidence",
+        "not-applicable"
+      ]
+    },
+    "BaseTextSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "CandidateId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "SourceValidationSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "ProposedText": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "ReviewerNote": {
+      "type": "string"
+    },
+    "Evidence": {},
+    "ReviewInstanceId": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "additionalProperties": false
+}

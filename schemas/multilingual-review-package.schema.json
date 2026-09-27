@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "multilingual-review-package.schema.json",
+  "title": "BG3Loc Multilingual Review Package",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "packageType",
+    "generatedAtUtc",
+    "sourceLocale",
+    "targetLocale",
+    "referenceLocales",
+    "generationInputs",
+    "counts",
+    "allowedAuthorities",
+    "artifacts",
+    "comparisonEvidence",
+    "candidates",
+    "ruleId"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "packageType": {"const": "MultilingualReviewPackage"},
+    "generatedAtUtc": {"type": "string"},
+    "sourceLocale": {"type": "string", "minLength": 1},
+    "targetLocale": {"type": "string", "minLength": 1},
+    "referenceLocales": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "generationInputs": {
+      "type": "object",
+      "required": [
+        "currentSourceLocale",
+        "currentTargetLocale",
+        "optionalReferenceLocales",
+        "historicalWorkbook",
+        "historicalUidList",
+        "historicalReviewDecision"
+      ],
+      "additionalProperties": {"type": "boolean"}
+    },
+    "counts": {
+      "type": "object",
+      "required": ["total", "classifications", "referenceLocales"],
+      "properties": {
+        "total": {"type": "integer", "minimum": 0},
+        "classifications": {
+          "type": "object",
+          "additionalProperties": {"type": "integer", "minimum": 0}
+        },
+        "referenceLocales": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "allowedAuthorities": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "path", "sha256"],
+        "properties": {
+          "kind": {"enum": ["pass1", "pass2"]},
+          "path": {"type": "string"},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "comparisonEvidence": {"type": "object"},
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "candidate_id",
+          "content_uid",
+          "english_text",
+          "exact_reuse_class",
+          "reusable_target_occurrence_count",
+          "reusable_target_distinct_count",
+          "same_uid_reference_locales",
+          "protected_tokens"
+        ],
+        "properties": {
+          "candidate_id": {"type": "string", "pattern": "^MULTI-[0-9A-F]{16}$"},
+          "content_uid": {"type": "string", "minLength": 1},
+          "english_text": {"type": "string"},
+          "exact_reuse_class": {
+            "enum": ["NO_EXACT_CANDIDATE", "EXACT_SINGLE", "EXACT_CONSENSUS", "EXACT_CONFLICT"]
+          },
+          "reusable_target_occurrence_count": {"type": "integer", "minimum": 0},
+          "reusable_target_distinct_count": {"type": "integer", "minimum": 0},
+          "same_uid_reference_locales": {
+            "type": "array",
+            "items": {"type": "string"},
+            "uniqueItems": true
+          },
+          "protected_tokens": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "ruleId": {"const": "BG3-MULTILINGUAL-HUMAN-REVIEW"}
+  },
+  "additionalProperties": false
+}

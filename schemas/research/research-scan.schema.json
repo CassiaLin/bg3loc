@@ -1,0 +1,27 @@
+﻿{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CassiaLin/bg3loc/schemas/research/research-scan.schema.json",
+  "title": "ResearchScanManifest",
+  "type": "object",
+  "required": ["resourceCount", "resources"],
+  "properties": {
+    "gameDir": { "type": "string" },
+    "resourceCount": { "type": "integer", "minimum": 0 },
+    "resources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["pakName", "internalPath", "resourceFormat", "sourceRole"],
+        "properties": {
+          "pakName": { "type": "string" },
+          "internalPath": { "type": "string" },
+          "resourceFormat": { "type": "string" },
+          "sourceRole": { "type": "string" },
+          "size": { "type": "integer", "minimum": 0 },
+          "sha256": { "type": "string" }
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}

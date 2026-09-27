@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CassiaLin/bg3loc/schemas/translation-evidence-record.schema.json",
+  "title": "BG3Loc E2E Translation Evidence Record",
+  "type": "object",
+  "required": [
+    "contentUid",
+    "evidenceType",
+    "payload"
+  ],
+  "properties": {
+    "contentUid": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evidenceType": {
+      "enum": ["context", "bark", "quest", "ui-skill", "multilingual"]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "classification": {
+      "type": "string"
+    },
+    "payload": {},
+    "provenance": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

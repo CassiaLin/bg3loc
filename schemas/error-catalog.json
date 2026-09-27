@@ -1,0 +1,121 @@
+{
+  "schemaVersion": "1.0",
+  "commands": {
+    "scan": {
+      "exitCodes": {
+        "0": "success",
+        "2": "game-not-found",
+        "3": "data-directory-not-found",
+        "4": "no-localization-resources",
+        "5": "ambiguous-installation",
+        "6": "backend-unavailable",
+        "7": "localization-discovery-error"
+      }
+    },
+    "extract": {
+      "exitCodes": {
+        "0": "success",
+        "10": "scan-manifest-invalid",
+        "11": "source-locale-not-found",
+        "12": "target-locale-not-found",
+        "13": "reference-locale-not-found",
+        "14": "effective-provider-unresolved",
+        "15": "archive-extraction-failed",
+        "16": "loca-conversion-failed",
+        "17": "normalization-failed",
+        "18": "roundtrip-validation-failed"
+      }
+    },
+    "build": {
+      "exitCodes": {
+        "0": "success",
+        "20": "extract-manifest-invalid",
+        "21": "mode-invalid",
+        "22": "context-required-but-missing",
+        "23": "workbook-generation-failed",
+        "24": "schema-validation-failed",
+        "25": "identity-duplication-detected",
+        "26": "protected-field-contract-failed"
+      }
+    },
+    "validate": {
+      "exitCodes": {
+        "0": "success",
+        "30": "build-manifest-invalid",
+        "31": "return-material-not-found",
+        "32": "return-format-invalid",
+        "33": "identity-validation-failed",
+        "34": "immutable-field-validation-failed",
+        "35": "protected-token-validation-failed",
+        "36": "coverage-validation-failed",
+        "37": "validation-output-failed"
+      },
+      "rowErrors": {
+        "VAL001": "UNKNOWN_CONTENT_UID",
+        "VAL002": "DUPLICATE_CONTENT_UID",
+        "VAL003": "SOURCE_TEXT_MODIFIED",
+        "VAL004": "SOURCE_VERSION_MODIFIED",
+        "VAL005": "LOCALE_ROLE_MODIFIED",
+        "VAL006": "PROTECTED_TOKEN_MISSING",
+        "VAL007": "PROTECTED_TOKEN_ADDED",
+        "VAL008": "MARKUP_INVALID",
+        "VAL009": "REQUIRED_TARGET_EMPTY",
+        "VAL010": "BLIND_FIRST_COVERAGE_INCOMPLETE",
+        "VAL011": "UNEXPECTED_EDITED_FIELD",
+        "VAL012": "ROW_NOT_IN_BUILD_MANIFEST",
+        "VAL101": "ROW_MISSING_FROM_RETURN",
+        "VAL102": "STATUS_NEEDS_MORE_CONTEXT",
+        "VAL103": "STATUS_ESCALATE"
+      }
+    },
+    "rebuild": {
+      "exitCodes": {
+        "0": "success",
+        "40": "validate-manifest-invalid",
+        "41": "accepted-records-missing",
+        "42": "target-baseline-missing",
+        "43": "merge-failed",
+        "44": "loca-serialization-failed",
+        "45": "semantic-roundtrip-failed",
+        "46": "accepted-text-mismatch",
+        "47": "uid-set-integrity-failed",
+        "48": "container-repack-failed",
+        "49": "rebuild-output-failed"
+      }
+    },
+    "install": {
+      "exitCodes": {
+        "0": "success",
+        "50": "rebuild-manifest-invalid",
+        "51": "game-install-not-found",
+        "52": "game-identity-mismatch",
+        "53": "build-or-baseline-mismatch",
+        "54": "artifact-integrity-failed",
+        "55": "backup-failed",
+        "56": "destination-unresolved",
+        "57": "temporary-write-failed",
+        "58": "replacement-failed",
+        "59": "post-install-verification-failed",
+        "60": "rollback-failed"
+      }
+    },
+    "project": {
+      "exitCodes": {
+        "0": "success",
+        "71": "project-config-invalid-or-exists"
+      }
+    },
+    "workflow": {
+      "exitCodes": {
+        "0": "success",
+        "71": "project-config-invalid",
+        "72": "workflow-state-invalid",
+        "73": "workflow-prepare-failed",
+        "74": "workflow-review-blocked",
+        "75": "workflow-validate-failed",
+        "76": "workflow-rebuild-failed",
+        "77": "workflow-install-failed"
+      }
+    }
+  }
+}

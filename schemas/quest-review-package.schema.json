@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CassiaLin/bg3loc/schemas/quest-review-package.schema.json",
+  "title": "BG3Loc Quest Review Package",
+  "type": "object",
+  "required": ["schemaVersion", "packageType", "sourceLocale", "targetLocale", "generationInputs", "counts", "candidates"],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "packageType": {"const": "QuestReviewPackage"},
+    "sourceLocale": {"type": "string", "minLength": 1},
+    "targetLocale": {"type": "string", "minLength": 1},
+    "generationInputs": {
+      "type": "object",
+      "required": ["historicalWorkbook", "historicalUidList", "historicalReviewDecision"],
+      "properties": {
+        "historicalWorkbook": {"const": false},
+        "historicalUidList": {"const": false},
+        "historicalReviewDecision": {"const": false}
+      }
+    },
+    "counts": {
+      "type": "object",
+      "required": ["total", "occurrences", "QuestTitle", "QuestDescription"],
+      "properties": {
+        "total": {"type": "integer", "minimum": 0},
+        "occurrences": {"type": "integer", "minimum": 0},
+        "QuestTitle": {"type": "integer", "minimum": 0},
+        "QuestDescription": {"type": "integer", "minimum": 0}
+      }
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["candidate_id", "content_uid", "english_text", "quest_role", "occurrences", "occurrence_count", "protected_tokens"],
+        "properties": {
+          "candidate_id": {"type": "string", "pattern": "^QUEST-[0-9A-F]{16}$"},
+          "content_uid": {"type": "string", "minLength": 1},
+          "english_text": {"type": "string", "minLength": 1},
+          "quest_role": {"enum": ["QuestTitle", "QuestDescription"]},
+          "occurrence_count": {"type": "integer", "minimum": 1},
+          "occurrences": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["occurrence_id", "rule", "source_role", "evidence_type", "internal_path", "field_name", "field_role"],
+              "properties": {
+                "occurrence_id": {"type": "string", "pattern": "^[0-9A-F]{16}$"},
+                "field_role": {"enum": ["QuestTitle", "QuestDescription"]},
+                "internal_path": {"type": "string", "minLength": 1},
+                "field_name": {"type": "string", "minLength": 1},
+                "rule": {"type": "string", "minLength": 1}
+              }
+            }
+          },
+          "protected_tokens": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    }
+  }
+}

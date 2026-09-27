@@ -1,0 +1,46 @@
+{
+  "version": "example-v1",
+  "sourceLocale": "English",
+  "targetLocale": "ChineseTraditional",
+  "commonRules": [
+    "Translate only the source meaning; do not add or remove information.",
+    "Preserve protected tokens and markup exactly.",
+    "Return only the translated text."
+  ],
+  "categoryRules": {
+    "dialogue_general": [
+      "Use natural spoken language appropriate to dialogue."
+    ],
+    "dialogue_story": [
+      "Preserve narrative tone and character intent."
+    ],
+    "quest": [
+      "Keep objectives and journal information precise."
+    ],
+    "bark": [
+      "Keep short reactive lines concise and natural."
+    ],
+    "ui": [
+      "Prefer concise interface wording."
+    ],
+    "skill_spell": [
+      "Keep gameplay terminology precise and consistent."
+    ],
+    "item": [
+      "Keep item names and descriptions consistent."
+    ],
+    "book_lore": [
+      "Preserve authored prose and in-world tone."
+    ],
+    "character_world": [
+      "Keep proper names and world terminology consistent."
+    ],
+    "system_message": [
+      "Prefer clear and concise system wording."
+    ],
+    "tutorial": [
+      "Prioritize instructional clarity."
+    ]
+  },
+  "glossary": []
+}

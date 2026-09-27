@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CassiaLin/bg3loc/schemas/pipeline-state.schema.json",
+  "title": "BG3Loc Pipeline State",
+  "type": "object",
+  "required": ["schemaVersion", "currentStage", "stages"],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "currentStage": {"enum": ["scan", "extract", "build", "translate", "validate", "rebuild", "install", "complete"]},
+    "stages": {
+      "type": "object",
+      "required": ["scan", "extract", "build", "validate", "rebuild", "install"],
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "status": {"enum": ["pending", "running", "pass", "fail", "skipped"]},
+          "manifest": {"type": ["string", "null"]}
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

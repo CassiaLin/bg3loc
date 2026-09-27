@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CassiaLin/bg3loc/schemas/translation-material-row.schema.json",
+  "title": "BG3Loc E2E Translation Material Logical Row",
+  "type": "object",
+  "required": [
+    "ContentUid",
+    "SourceLocale",
+    "SourceText",
+    "TargetLocale",
+    "PresenceStatus",
+    "TranslationRequired",
+    "ProtectedTokens",
+    "EvidenceFlags",
+    "ContextSummary",
+    "ProposedTargetText",
+    "TranslationStatus",
+    "TranslatorNotes",
+    "TranslatorName"
+  ],
+  "properties": {
+    "ContentUid": {
+      "type": "string",
+      "minLength": 1
+    },
+    "SourceLocale": {
+      "type": "string",
+      "minLength": 1
+    },
+    "SourceText": {
+      "type": "string"
+    },
+    "TargetLocale": {
+      "type": "string",
+      "minLength": 1
+    },
+    "PresenceStatus": {
+      "enum": ["source+target", "source-only", "target-only"]
+    },
+    "TranslationRequired": {
+      "type": "boolean"
+    },
+    "ProtectedTokens": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "EvidenceFlags": {
+      "type": "array",
+      "items": {
+        "enum": ["context", "bark", "quest", "ui-skill", "multilingual"]
+      },
+      "uniqueItems": true
+    },
+    "ContextSummary": {
+      "type": "string"
+    },
+    "ExistingTargetText": {
+      "type": "string"
+    },
+    "ReferenceTexts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "ProposedTargetText": {
+      "type": "string"
+    },
+    "TranslationStatus": {
+      "type": "string"
+    },
+    "TranslatorNotes": {
+      "type": "string"
+    },
+    "TranslatorName": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}

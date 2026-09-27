@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CassiaLin/bg3loc/schemas/localization-record.schema.json",
+  "title": "BG3Loc Normalized Localization Record",
+  "type": "object",
+  "required": ["contentUid", "localeId", "text", "version", "sourcePackage", "sourceLocaEntry"],
+  "properties": {
+    "contentUid": {"type": "string", "minLength": 1},
+    "localeId": {"type": "string", "minLength": 1},
+    "text": {"type": "string"},
+    "version": {"type": ["integer", "string", "null"]},
+    "sourcePackage": {"type": "string", "minLength": 1},
+    "sourceLocaEntry": {"type": "string", "minLength": 1},
+    "sourceProvider": {"type": ["string", "null"]},
+    "textHash": {"type": ["string", "null"]},
+    "markupFingerprint": {"type": ["string", "null"]},
+    "presence": {"type": "boolean"}
+  },
+  "additionalProperties": true
+}

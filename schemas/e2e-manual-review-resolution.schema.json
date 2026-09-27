@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CassiaLin/bg3loc/schemas/e2e-manual-review-resolution.schema.json",
+  "title": "BG3Loc E2E Manual Review Resolution Record",
+  "type": "object",
+  "required": [
+    "ReviewStage",
+    "ContentUid",
+    "BaseTextSha256",
+    "ResolvedText",
+    "ResolvedTextSha256"
+  ],
+  "properties": {
+    "ReviewStage": {
+      "enum": ["structural", "language-qa"]
+    },
+    "ContentUid": {
+      "type": "string",
+      "minLength": 1
+    },
+    "BaseTextSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "ResolvedText": {
+      "type": "string"
+    },
+    "ResolvedTextSha256": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "additionalProperties": false
+}

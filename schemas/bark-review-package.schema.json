@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CassiaLin/bg3loc/schemas/bark-review-package.schema.json",
+  "title": "BG3Loc Bark Review Package",
+  "type": "object",
+  "required": ["schemaVersion", "packageType", "sourceLocale", "targetLocale", "generationInputs", "counts", "candidates"],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "packageType": {"const": "BarkReviewPackage"},
+    "sourceLocale": {"type": "string", "minLength": 1},
+    "targetLocale": {"type": "string", "minLength": 1},
+    "generationInputs": {
+      "type": "object",
+      "required": ["historicalWorkbook", "historicalUidList", "historicalReviewDecision"],
+      "properties": {
+        "historicalWorkbook": {"const": false},
+        "historicalUidList": {"const": false},
+        "historicalReviewDecision": {"const": false}
+      }
+    },
+    "counts": {
+      "type": "object",
+      "required": ["total", "SingleSpeaker", "SharedSpeaker"],
+      "properties": {
+        "total": {"type": "integer", "minimum": 0},
+        "SingleSpeaker": {"type": "integer", "minimum": 0},
+        "SharedSpeaker": {"type": "integer", "minimum": 0}
+      }
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["candidate_id", "content_uid", "english_text", "speaker_mode", "speaker_count", "speakers", "evidence", "protected_tokens"],
+        "properties": {
+          "candidate_id": {"type": "string", "pattern": "^BARK-[0-9A-F]{16}$"},
+          "content_uid": {"type": "string", "minLength": 1},
+          "speaker_mode": {"enum": ["SingleSpeaker", "SharedSpeaker"]},
+          "speaker_count": {"type": "integer", "minimum": 0},
+          "speakers": {"type": "array"},
+          "protected_tokens": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    }
+  }
+}

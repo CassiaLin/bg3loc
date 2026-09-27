@@ -1,0 +1,242 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CassiaLin/bg3loc/schemas/project-config.schema.json",
+  "title": "BG3Loc Project Config",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "project",
+    "locales",
+    "workflow"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "project": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "game": {
+      "type": "object",
+      "properties": {
+        "installDir": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "default": null
+        }
+      },
+      "additionalProperties": false,
+      "default": {
+        "installDir": null
+      }
+    },
+    "locales": {
+      "type": "object",
+      "required": [
+        "source",
+        "target"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true,
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    },
+    "workflow": {
+      "type": "object",
+      "required": [
+        "evidenceProfile",
+        "translationStrategy"
+      ],
+      "properties": {
+        "evidenceProfile": {
+          "enum": [
+            "basic",
+            "context",
+            "full"
+          ]
+        },
+        "translationStrategy": {
+          "enum": [
+            "standard",
+            "blind-first"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "reviews": {
+      "type": "object",
+      "properties": {
+        "structural": {
+          "oneOf": [
+            {
+              "const": "profile-default"
+            },
+            {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "bark",
+                  "quest",
+                  "ui-skill",
+                  "multilingual"
+                ]
+              },
+              "uniqueItems": true
+            }
+          ],
+          "default": "profile-default"
+        }
+      },
+      "additionalProperties": false,
+      "default": {
+        "structural": "profile-default"
+      }
+    },
+    "qa": {
+      "type": "object",
+      "properties": {
+        "ruleSets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "type",
+              "path"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+              },
+              "type": {
+                "enum": [
+                  "taiwan-usage"
+                ]
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false
+          },
+          "uniqueItems": true,
+          "default": []
+        }
+      },
+      "additionalProperties": false,
+      "default": {
+        "ruleSets": []
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "properties": {
+        "glossary": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "default": null
+        }
+      },
+      "additionalProperties": false,
+      "default": {
+        "glossary": null
+      }
+    },
+    "material": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "enum": [
+            "xlsx",
+            "csv",
+            "jsonl"
+          ],
+          "default": "xlsx"
+        },
+        "maxRowsPerFile": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1500
+        }
+      },
+      "additionalProperties": false,
+      "default": {
+        "format": "xlsx",
+        "maxRowsPerFile": 1500
+      }
+    },
+    "workspace": {
+      "type": "object",
+      "properties": {
+        "root": {
+          "type": "string",
+          "minLength": 1,
+          "default": "workspace"
+        }
+      },
+      "additionalProperties": false,
+      "default": {
+        "root": "workspace"
+      }
+    },
+    "scope": {
+      "type": "object",
+      "properties": {
+        "contentUids": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true,
+          "minItems": 1,
+          "default": null
+        }
+      },
+      "additionalProperties": false,
+      "default": {
+        "contentUids": null
+      }
+    }
+  },
+  "additionalProperties": false
+}

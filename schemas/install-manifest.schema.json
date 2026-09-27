@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CassiaLin/bg3loc/schemas/install-manifest.schema.json",
+  "title": "BG3Loc Install Manifest",
+  "type": "object",
+  "required": ["schemaVersion", "game", "targetLocale", "deployment", "rollbackAvailable"],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "game": {
+      "type": "object",
+      "required": ["id", "appId"],
+      "properties": {
+        "id": {"const": "bg3"},
+        "appId": {"const": 1086940},
+        "buildIdAtScan": {"type": ["string", "null"]},
+        "buildIdAtInstall": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "targetLocale": {"type": "string", "minLength": 1},
+    "deployment": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["artifact", "destination", "artifactSha256", "installedSha256", "backupPath", "backupSha256", "status"],
+        "properties": {
+          "artifact": {"type": "string", "minLength": 1},
+          "destination": {"type": "string", "minLength": 1},
+          "artifactSha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+          "installedSha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+          "backupPath": {"type": "string", "minLength": 1},
+          "backupSha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+          "status": {"enum": ["installed", "rolled-back", "failed"]}
+        },
+        "additionalProperties": true
+      }
+    },
+    "rollbackAvailable": {"type": "boolean"}
+  },
+  "additionalProperties": true
+}

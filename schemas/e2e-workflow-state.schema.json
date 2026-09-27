@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CassiaLin/bg3loc/schemas/e2e-workflow-state.schema.json",
+  "title": "BG3Loc E2E Workflow State",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "projectConfig",
+    "projectConfigSha256",
+    "evidenceProfile",
+    "translationStrategy",
+    "currentStage",
+    "stages",
+    "bindings"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "projectConfig": {
+      "type": "string",
+      "minLength": 1
+    },
+    "projectConfigSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "evidenceProfile": {
+      "enum": [
+        "basic",
+        "context",
+        "full"
+      ]
+    },
+    "translationStrategy": {
+      "enum": [
+        "standard",
+        "blind-first"
+      ]
+    },
+    "currentStage": {
+      "enum": [
+        "config",
+        "scan",
+        "extract",
+        "evidence",
+        "package",
+        "translate",
+        "structural-review",
+        "reconcile",
+        "language-qa",
+        "validate",
+        "rebuild",
+        "install-dry-run",
+        "install",
+        "complete"
+      ]
+    },
+    "stages": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/stage"
+      }
+    },
+    "bindings": {
+      "type": "object",
+      "properties": {
+        "scanManifestSha256": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "extractManifestSha256": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "translationPackageSha256": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reviewIntegrationSha256": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "validationManifestSha256": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rebuildManifestSha256": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "qaRuleSets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "sha256"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sha256": {
+                "$ref": "#/$defs/sha256"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "validationAcceptedSha256": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "stage": {
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "not-started",
+            "ready",
+            "running",
+            "completed",
+            "blocked",
+            "invalidated",
+            "failed",
+            "skipped"
+          ]
+        },
+        "artifact": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sha256": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "message": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fingerprint": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CassiaLin/bg3loc/schemas/lstp/functional-classification.schema.json",
+  "title": "LSTP Functional Classification Record",
+  "type": "object",
+  "required": [
+    "contentUid",
+    "primaryCategory",
+    "tags",
+    "classificationStatus",
+    "classificationConfidence",
+    "classificationEvidence"
+  ],
+  "properties": {
+    "contentUid": {
+      "type": "string",
+      "pattern": "^h[0-9a-f]{8}g[0-9a-f]{4}g[0-9a-f]{4}g[0-9a-f]{4}g[0-9a-f]{12}$"
+    },
+    "primaryCategory": {
+      "enum": [
+        "dialogue_general",
+        "dialogue_story",
+        "quest",
+        "bark",
+        "ui",
+        "skill_spell",
+        "item",
+        "book_lore",
+        "character_world",
+        "system_message",
+        "tutorial",
+        "other"
+      ]
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "classificationStatus": {
+      "enum": ["classified", "ambiguous", "unclassified"]
+    },
+    "classificationConfidence": {
+      "enum": ["high", "medium", "low"]
+    },
+    "classificationEvidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "category",
+          "mappingType",
+          "classification",
+          "ruleId",
+          "resourcePath",
+          "sourceRole",
+          "properties"
+        ],
+        "properties": {
+          "category": { "type": "string" },
+          "mappingType": { "type": "string" },
+          "classification": { "type": "string" },
+          "ruleId": { "type": "string" },
+          "resourcePath": { "type": "string" },
+          "sourceRole": { "type": "string" },
+          "properties": { "type": "object" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

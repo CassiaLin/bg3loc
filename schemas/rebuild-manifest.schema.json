@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CassiaLin/bg3loc/schemas/rebuild-manifest.schema.json",
+  "title": "BG3Loc Rebuild Manifest",
+  "type": "object",
+  "required": ["schemaVersion", "targetLocale", "baseline", "merge", "artifacts", "validation"],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "targetLocale": {"type": "string", "minLength": 1},
+    "baseline": {"type": "object"},
+    "merge": {
+      "type": "object",
+      "required": ["acceptedRecordCount", "changedUidCount"],
+      "properties": {
+        "acceptedRecordCount": {"type": "integer", "minimum": 0},
+        "changedUidCount": {"type": "integer", "minimum": 0},
+        "newTargetNodeCount": {"type": "integer", "minimum": 0},
+        "preservedTargetOnlyCount": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": true
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["type", "path", "sha256"],
+        "properties": {
+          "type": {"enum": ["loca", "pak", "other"]},
+          "path": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"}
+        },
+        "additionalProperties": true
+      }
+    },
+    "validation": {
+      "type": "object",
+      "required": ["semanticRoundTrip", "acceptedTextMatch", "uidSetIntegrity", "untouchedRecordIntegrity"],
+      "properties": {
+        "semanticRoundTrip": {"enum": ["pass", "fail"]},
+        "acceptedTextMatch": {"enum": ["pass", "fail"]},
+        "uidSetIntegrity": {"enum": ["pass", "fail"]},
+        "untouchedRecordIntegrity": {"enum": ["pass", "fail"]}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

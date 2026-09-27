@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CassiaLin/bg3loc/schemas/ui-skill-review-package.schema.json",
+  "title": "BG3Loc UI Skill Review Package",
+  "type": "object",
+  "required": ["schemaVersion", "packageType", "sourceLocale", "targetLocale", "generationInputs", "counts", "candidates"],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "packageType": {"const": "UiSkillReviewPackage"},
+    "sourceLocale": {"type": "string", "minLength": 1},
+    "targetLocale": {"type": "string", "minLength": 1},
+    "generationInputs": {
+      "type": "object",
+      "required": ["uiSkillUniverse", "sourceOnlyBoundary", "historicalWorkbook", "historicalUidList", "historicalReviewDecision"],
+      "properties": {
+        "uiSkillUniverse": {"const": true},
+        "sourceOnlyBoundary": {"const": false},
+        "historicalWorkbook": {"const": false},
+        "historicalUidList": {"const": false},
+        "historicalReviewDecision": {"const": false}
+      }
+    },
+    "counts": {
+      "type": "object",
+      "required": ["total", "relations", "workstreams", "domains"],
+      "properties": {
+        "total": {"type": "integer", "minimum": 0},
+        "relations": {"type": "integer", "minimum": 0},
+        "workstreams": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+        "domains": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      }
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["candidate_id", "content_uid", "english_text", "workstreams", "domains", "relations", "relation_count", "protected_tokens"],
+        "properties": {
+          "candidate_id": {"type": "string", "pattern": "^UISKILL-[0-9A-F]{16}$"},
+          "content_uid": {"type": "string", "minLength": 1},
+          "english_text": {"type": "string", "minLength": 1},
+          "workstreams": {"type": "array", "minItems": 1, "items": {"type": "string"}, "uniqueItems": true},
+          "domains": {"type": "array", "minItems": 1, "items": {"type": "string"}, "uniqueItems": true},
+          "relation_count": {"type": "integer", "minimum": 1},
+          "relations": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["relation_id", "rule", "classification", "domain", "workstream", "effective_provider", "defining_provider", "package", "internal_path", "source_families", "domains", "entity_type", "entity", "field", "inheritance_depth", "explicit_or_inherited", "provider_override_applied", "comment_only"],
+              "properties": {
+                "relation_id": {"type": "string", "pattern": "^[0-9A-F]{16}$"},
+                "classification": {"const": "SemanticTarget"},
+                "domain": {"type": "string", "minLength": 1},
+                "workstream": {"type": "string", "minLength": 1},
+                "effective_provider": {"type": "string", "minLength": 1},
+                "defining_provider": {"type": "string", "minLength": 1},
+                "package": {"type": "string", "minLength": 1},
+                "internal_path": {"type": "string", "minLength": 1},
+                "source_families": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+                "domains": {"type": "array", "minItems": 1, "items": {"type": "string"}, "uniqueItems": true},
+                "entity_type": {"type": "string", "minLength": 1},
+                "entity": {"type": "string", "minLength": 1},
+                "field": {"type": "string", "minLength": 1},
+                "inheritance_depth": {"type": "integer", "minimum": 0},
+                "explicit_or_inherited": {"enum": ["explicit", "inherited"]},
+                "provider_override_applied": {"type": "boolean"},
+                "comment_only": {"const": false}
+              }
+            }
+          },
+          "protected_tokens": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    }
+  }
+}

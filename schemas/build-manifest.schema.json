@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CassiaLin/bg3loc/schemas/build-manifest.schema.json",
+  "title": "BG3Loc Build Manifest",
+  "type": "object",
+  "required": ["schemaVersion", "mode", "sourceLocale", "targetLocale", "materials"],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "mode": {"enum": ["basic", "context", "blind-first"]},
+    "sourceLocale": {"type": "string", "minLength": 1},
+    "targetLocale": {"type": "string", "minLength": 1},
+    "referenceLocales": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "maxRowsPerWorkbook": {"type": "integer", "minimum": 1},
+    "materials": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "recordCount"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "recordCount": {"type": "integer", "minimum": 0},
+          "sha256": {"type": ["string", "null"]}
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}
