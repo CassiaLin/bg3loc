@@ -2,11 +2,25 @@
 
 [English](CHANGELOG.md)
 
-## 未發布 — v1.3 開發中
+## 1.3.0 - 2026-09-28
 
-- 新增 workspace-based production prepare、可續跑的 OpenAI-compatible provider 執行、QA/人工審核、完成度 gate 後的 finalize/rebuild，以及 retry pacing。
-- 新增唯讀進度、provider token usage 與可選的使用者自訂價格成本報表。
-- 新增新手流程、ruleset、疑難排解指南，以及完全虛構的套件 smoke demo。
+### 新增功能
+- 為較大型的在地化專案提供 production 流程：功能分類、依類別分批，以及可續跑的 OpenAI-compatible provider 執行。
+- QA 路由（PASS / RETRY / REVIEW / FAIL）、人工審核決議，以及完成度 gate 後的 finalize/rebuild。
+
+### 可靠性與安全
+- 暫時性 provider 失敗時的有界重試、`Retry-After` 與指數退避。
+- 未分類項目須明確決議，不會默認為已翻譯。
+
+### 報表
+- 唯讀進度與錯誤報表、provider 回報的 token 用量，以及依使用者提供價格計算的可選估算。
+
+### 文件與公開發布
+- 新手、ruleset 與疑難排解指南，以及不產生可安裝遊戲內容的虛構端到端 smoke demo。
+- 公開 Git 歷史從淨化後的產品樹重新開始，不含私人研發 ancestry 或遊戲衍生 corpus。
+
+### 驗證
+- 公開 repository 通過 464 個測試與 75 個 subtests；wheel 與 sdist 隔離 demo 通過。
 
 
 ## 1.2.0 - 2026-09-27

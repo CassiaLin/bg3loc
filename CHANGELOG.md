@@ -2,11 +2,25 @@
 
 [繁體中文（台灣）](CHANGELOG.zh-TW.md)
 
-## Unreleased — v1.3 development
+## 1.3.0 - 2026-09-28
 
-- Added workspace-oriented production prepare, resumable OpenAI-compatible execution, QA and human review, completion-gated finalize/rebuild, and retry pacing.
-- Added read-only production progress, provider token usage, and optional user-priced cost reports.
-- Added a newcomer workflow, ruleset and troubleshooting guides, plus a fictional package smoke demo.
+### Added
+- A production workflow for larger localization projects: functional classification, category-aware batching, and resumable execution with an OpenAI-compatible provider.
+- QA routes (PASS / RETRY / REVIEW / FAIL), human review decisions, and completion-gated finalize/rebuild.
+
+### Reliability and safety
+- Bounded retry pacing with `Retry-After` and exponential backoff for temporary provider failures.
+- Explicit decisions for unclassified rows; they are not silently treated as translated.
+
+### Reporting
+- Read-only progress and error reports, provider-reported token usage, and optional estimates using user-supplied prices.
+
+### Documentation and public release
+- Newcomer, ruleset, and troubleshooting guides, plus a fictional end-to-end smoke demo that does not create installable game content.
+- A new public Git history containing the sanitized product tree rather than private development ancestry or game-derived corpus.
+
+### Validation
+- 464 tests and 75 subtests passed on the public repository; wheel and source distribution clean-room demos passed.
 
 
 ## 1.2.0 - 2026-09-27

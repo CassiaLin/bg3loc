@@ -2,7 +2,7 @@
 
 [繁體中文](README.zh-TW.md)
 
-BG3Loc helps a translation team extract text from its own *Baldur's Gate 3* installation, translate it, check it, rebuild language files, and install the result with a backup. The v1.3 production workflow supports resumable provider runs, human review, and progress reports. This branch is under development; the published package version remains 1.2.0.
+BG3Loc helps a translation team extract text from its own *Baldur's Gate 3* installation, translate it, check it, rebuild language files, and install the result with a backup. Version 1.3.0 adds a production workflow with resumable provider runs, human review, and progress reports.
 
 BG3Loc does not include game text, official translations, game packages, or the third-party LSLib archive tool. You need a lawful BG3 installation and must obtain LSLib separately. Windows is the primary tested platform; Linux/Proton and macOS have less real-game validation.
 
