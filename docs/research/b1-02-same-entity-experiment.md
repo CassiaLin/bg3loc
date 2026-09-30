@@ -2,7 +2,7 @@
 
 ## Status / 狀態
 
-**Framework = READY; Real-Corpus Validation = PENDING; Provider Pilot = PENDING; Production Integration = NOT STARTED.** This branch supplies an offline experiment format. It has not used real BG3 text and does not show that context improves translation. / 本分支只提供離線實驗框架，未使用真實 BG3 文本，也未證明脈絡會改善翻譯。
+**Framework = READY; Real-Corpus Validation Phase 1 = ACCEPTED; Provider A/B Pilot = PENDING; Human Quality Evaluation = PENDING; Production Integration = NOT STARTED.** This branch supplies an offline experiment format and real source-side measurements. It does not show that context improves translation. / 本分支提供離線實驗框架與真實來源端量測，尚未證明脈絡會改善翻譯。
 
 ## Input and policy / 輸入與政策
 
@@ -12,7 +12,7 @@ Each input line needs `contentUid`, `category`, `fieldRole`, `sourceText`, and `
 
 Same category + structural entity key is grouped. Exclude target UID, same field role, empty or nonlinguistic text, duplicate UID, and duplicate source text (case-insensitive). Priority is centralized by category; unknown roles sort afterward. Sort by priority, role, UID, then text. Select at most **4** fields and **4000** source characters. Prefer whole fields; skip a field that could fit whole in a fresh budget. Only a single field longer than the total budget may be cut; it carries `truncated: true`. / 同類與同實體分組；排除目標、相同欄位角色、空白或非文字、重複 UID／原文。依欄位優先序排序，最多四欄、四千字。優先保留完整欄位；只有單欄本身超限才截斷並標記。
 
-Sampling is deterministic: observed kind/length strata are round-robin selected, with SHA-256 target order inside each stratum. Canonical JSON yields pack, sample and prompt hashes. The manifest records synthetic sample counts and character deltas only when run on the fictional fixture; those numbers are **not real corpus findings**. / 抽樣以固定分層與雜湊順序執行，並產生可重現指紋；虛構範例的數量與字元成本不能當真實結果。
+Sampling is deterministic: observed field-kind, source-length, and related-field-count strata are round-robin selected, with SHA-256 target order inside each stratum. Canonical JSON yields pack, sample and prompt hashes. The manifest records synthetic sample counts and character deltas only when run on the fictional fixture; those numbers are **not real corpus findings**. / 抽樣以固定分層與雜湊順序執行，並產生可重現指紋；虛構範例的數量與字元成本不能當真實結果。
 
 ## Prompt variants / Prompt 版本
 
@@ -30,11 +30,33 @@ The exact full prompts and hashes are written to `b1-02-prompts.jsonl`; manifest
 
 ## Later validation / 後續驗證
 
-- Real corpus coverage measurement = **PENDING** / 真實覆蓋率待測
-- Real sample generation = **PENDING** / 真實樣本待產生
-- Prompt token delta measurement = **PENDING** / 真實 token 增量待測
+- Real corpus coverage measurement = **COMPLETE** / 真實覆蓋率已測
+- Real sample generation = **COMPLETE** / 真實樣本已產生
+- Prompt character delta measurement = **COMPLETE**; token estimate = **NOT MEASURED** / 真實字元增量已測，token 估計未測
 - Provider A/B pilot = **PENDING** / 模型試驗待做
 - Human quality evaluation = **PENDING** / 人工評分待做
 - Production integration decision = **PENDING** / 正式整合決策待做
 
 The later pilot should use independent requests with identical provider, model, settings, ruleset, glossary, and protected token policy; its only treatment is related source context. Use blind review and report by category and target/related role pair, including better/worse/tie and contamination cases. / 後續試驗應讓兩版使用相同模型設定與規則、獨立請求；盲評時按類別及欄位組合報告勝負與污染案例。
+
+## Real-Corpus Validation Phase 1 / 真實語料驗證第一階段
+
+The `real_context` adapter consumes three existing research outputs: normalized **English** source JSONL, `research-mappings.jsonl`, and `ui-skill-universe.csv`. It reads no target localization. Stats `entryName` supplies skill/spell identity; Quest Journal `entityId` supplies quest identity; Root Templates `GameObjects` UUID supplies item identity. Stats and item field names and quest field roles remain intact. An unresolved or conflicting UID is excluded and counted. The generic `context_experiment` module remains independent of the game installation and PAK files.
+
+PowerShell reproduction (substitute an accessible archive backend and local output paths):
+
+```powershell
+$env:PYTHONPATH = 'src'
+$env:BG3LOC_DIVINE_EXE = '<LSLIB_DIVINE_EXE>'
+python -m bg3loc research scan --game-dir '<BG3_GAME_DIR>' --output workspace/b1-02/research-scan.json --source English --target ChineseTraditional
+python -c "import json,pathlib; p=pathlib.Path('workspace/b1-02/research-scan.json'); d=json.loads(p.read_text(encoding='utf-8')); keep={'StatsResource','JournalQuest','RootTemplates','SourceLocalization','TargetLocalization'}; d['resources']=[r for r in d['resources'] if r['sourceRole'] in keep]; d['resourceCount']=len(d['resources']); pathlib.Path('workspace/b1-02/research-scan-scoped.json').write_text(json.dumps(d,ensure_ascii=False,sort_keys=True),encoding='utf-8')"
+$mapDir = 'workspace/b1-02/research-map-context-only'
+New-Item -ItemType Directory -Force $mapDir | Out-Null
+Set-Content -LiteralPath "$mapDir/story-occurrence-ledger.csv" -Value 'ContentUid,PakName,InternalPath,ResourceFamily,ResourceFormat,StoryDomain,NodeId,AttributeRole,HasSpeaker,HasDialog,HasQuest,IsOldText' -Encoding utf8
+python -m bg3loc research map --scan workspace/b1-02/research-scan-scoped.json --output-dir $mapDir
+python -m bg3loc scan --game-dir '<BG3_GAME_DIR>' --output workspace/b1-02/extract-scan
+python -m bg3loc extract --scan workspace/b1-02/extract-scan/scan-manifest.json --source English --target ChineseTraditional --output workspace/b1-02/extract
+python -m bg3loc.research.real_context --source workspace/b1-02/extract/normalized/English.jsonl --mappings "$mapDir/research-mappings.jsonl" --ui-skill-universe "$mapDir/ui-skill-universe.csv" --ruleset docs/lstp/ruleset-example.json --output workspace/b1-02
+```
+
+The scoped scan includes only stats, journal, Root Templates, and localization resources. The header-only story occurrence ledger suppresses extraction of dialogue and level evidence, which are outside this phase; the existing map command still parses the scoped stats and journal resources and builds the UI-skill universe for item templates. The ignored `workspace/b1-02/` directory contains `real-context-records.jsonl`, `b1-02-prompts.jsonl`, both experiment manifests, and `real-corpus-summary.json`/`.md`. Re-run the final command with unchanged inputs and compare `sampleFingerprint`, sample order, and `promptVariantHashes`. The summary distinguishes all category UIDs, structurally eligible rows, and rows with usable context. It also reports field roles, entity sizes, related-field counts, character cost, limits, and exclusions. Prompt output contains real English game text and must remain local. The adapter uses no translation provider.

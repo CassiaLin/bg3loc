@@ -186,7 +186,8 @@ def _stratum(pack: dict[str, Any]) -> str:
     size = len(target["sourceText"])
     kind = "name" if "name" in role or "title" in role else "instruction" if "tooltip" in role else "description"
     length = "short" if size < 80 else "medium" if size < 250 else "long"
-    return f"{kind}:{length}"
+    related = min(len(pack["relatedFields"]), 4)
+    return f"{kind}:{length}:related{related}"
 
 
 def sample_packs(packs: list[dict[str, Any]], per_category: int = 100) -> list[dict[str, Any]]:
@@ -275,7 +276,7 @@ def run(input_path: Path, ruleset_path: Path, output_dir: Path,
                 "sampleFingerprint": digest([r["contextPack"] for r in records]),
                 "sampleCount": len(records), "categoryCounts": {c: counts[c] for c in CATEGORIES},
                 "coverage": coverage, "categoryMetrics": by_category,
-                "selectionPolicy": "stable canonical deduplication; observed kind:length strata round robin; SHA-256 target ordering",
+                "selectionPolicy": "stable canonical deduplication; observed kind:length:related-count strata round robin; SHA-256 target ordering",
                 "maxRelatedFields": max_fields, "maxContextChars": max_chars,
                 "contextLimits": {"maxRelatedFields": max_fields, "maxContextChars": max_chars,
                                   "overflow": "field priority, role, UID; skip a field that could fit whole later; truncate only a field longer than the total budget"},
