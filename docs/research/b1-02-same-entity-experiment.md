@@ -60,3 +60,26 @@ python -m bg3loc.research.real_context --source workspace/b1-02/extract/normaliz
 ```
 
 The scoped scan includes only stats, journal, Root Templates, and localization resources. The header-only story occurrence ledger suppresses extraction of dialogue and level evidence, which are outside this phase; the existing map command still parses the scoped stats and journal resources and builds the UI-skill universe for item templates. The ignored `workspace/b1-02/` directory contains `real-context-records.jsonl`, `b1-02-prompts.jsonl`, both experiment manifests, and `real-corpus-summary.json`/`.md`. Re-run the final command with unchanged inputs and compare `sampleFingerprint`, sample order, and `promptVariantHashes`. The summary distinguishes all category UIDs, structurally eligible rows, and rows with usable context. It also reports field roles, entity sizes, related-field counts, character cost, limits, and exclusions. Prompt output contains real English game text and must remain local. The adapter uses no translation provider.
+
+## Phase 2 Provider A/B Pilot
+
+`context_pilot` takes a deterministic subset of the frozen Phase 1 sample: 40 skill/spell, 40 item, and 20 quest rows (or the available smaller count). It round-robins actual field-role, source-length, and related-field-count strata; SHA-256 target order and ContentUid break ties. It verifies Phase 1 sample and prompt fingerprints and freezes the subset, call order, ruleset, and provider configuration. Phase 1 artifacts are not changed.
+
+Use one existing OpenAI-compatible provider/model. A research transport wrapper supplies the exact frozen Phase 1 A/B messages through BG3Loc's existing provider, preserving its output parser, usage handling, and protected syntax validator. Calls share no conversation history. Fixed execution settings are temperature 0, 2048 output tokens, and a 120-second timeout; temperature 0 does not guarantee provider determinism. The existing provider expects an endpoint root and appends `/v1/chat/completions`.
+
+```powershell
+$env:PYTHONPATH = 'src'
+python -m bg3loc.research.context_pilot prepare
+$pilotArgs = @('--base-url', '<OPENAI_COMPATIBLE_BASE_URL>', '--model', '<MODEL>', '--api-key-env', '<API_KEY_ENV>', '--max-output-tokens', '2048', '--timeout', '120')
+python -m bg3loc.research.context_pilot smoke @pilotArgs
+# Inspect smoke status, parsing, protected syntax, usage, and frozen A/B payloads.
+python -m bg3loc.research.context_pilot run @pilotArgs
+```
+
+Configure the named API key environment variable securely before execution. Keys and headers are never written to artifacts. Omit `--api-key-env` only for an endpoint explicitly configured without authentication. The four-call smoke selects one skill and one item from the frozen pilot; successful smoke calls count toward the planned 200 calls and are reused. Full execution is gated on four valid smoke outputs. The sorted sample schedule alternates A/B and B/A pairs, giving 50 of each first-variant order for a 100-row pilot. Each transient 429, 5xx, or transport failure has at most three total attempts; syntax-invalid outputs are retained as invalid and not repaired. Exhausted quota or persistent 429 stops the run. Failed rows are never replaced and incomplete pairs are excluded from review.
+
+All outputs remain under ignored `workspace/b1-02/phase2/`: `pilot-sample.jsonl`, `b1-02-phase2-pilot-manifest.json`, `requests/`, `responses/`, `attempts.jsonl`, `results.jsonl`, `usage-summary.json`, and `execution-summary.md`. Response captures allowlist text, request ID, numeric usage, HTTP status, and quota status; transport headers and provider error messages are omitted. Usage reports distinguish final result statistics from all reported attempt tokens, including retries. Missing token usage remains unavailable. Prices are not inferred.
+
+Share **only `blind-review.json`** for the primary human review. It contains source, category, field role, protected tokens, anonymous candidates, and blank scores/preference/contamination/notes. Candidate order uses SHA-256(sampleId) parity. `review-key.json` holds the separated hidden A/B mapping; `diagnostics.json` contains source context and heuristic contamination hints and must stay outside primary blind scoring. The review JSON schema rejects extra metadata. Apply the existing [rubric](b1-02-evaluation-rubric.md): 0=bad/wrong, 1=acceptable, 2=strong; contamination also gets YES/NO. Preference is candidate1, candidate2, tie, or both_bad. Heuristic hints are not human contamination verdicts. No automatic quality scoring occurs.
+
+Provider pilot execution remains **PENDING** until a configured provider passes smoke and execution outputs, usage report, and blind review package are captured. Human Quality Evaluation = PENDING; Production Integration = NOT STARTED.

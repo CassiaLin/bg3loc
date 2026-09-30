@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "B1-02 blind human review",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "samples"],
+  "properties": {
+    "schemaVersion": {"const": "b1-02-blind-review/1"},
+    "samples": {"type": "array", "items": {"$ref": "#/$defs/sample"}}
+  },
+  "$defs": {
+    "score": {"enum": [null, 0, 1, 2]},
+    "scores": {
+      "type": "object", "additionalProperties": false,
+      "required": ["meaning", "naturalness", "terminology", "entityField", "contamination"],
+      "properties": {
+        "meaning": {"$ref": "#/$defs/score"},
+        "naturalness": {"$ref": "#/$defs/score"},
+        "terminology": {"$ref": "#/$defs/score"},
+        "entityField": {"$ref": "#/$defs/score"},
+        "contamination": {"$ref": "#/$defs/score"}
+      }
+    },
+    "sample": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sampleId", "sourceText", "category", "fieldRole", "protectedTokens", "candidate1", "candidate2", "scores", "preference", "contamination", "notes"],
+      "properties": {
+        "sampleId": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "sourceText": {"type": "string"},
+        "category": {"enum": ["skill_spell", "item", "quest"]},
+        "fieldRole": {"type": "string"},
+        "protectedTokens": {"type": "array", "items": {"type": "string"}},
+        "candidate1": {"type": "string"},
+        "candidate2": {"type": "string"},
+        "scores": {
+          "type": "object", "additionalProperties": false, "required": ["candidate1", "candidate2"],
+          "properties": {"candidate1": {"$ref": "#/$defs/scores"}, "candidate2": {"$ref": "#/$defs/scores"}}
+        },
+        "preference": {"enum": [null, "candidate1", "candidate2", "tie", "both_bad"]},
+        "contamination": {
+          "type": "object", "additionalProperties": false, "required": ["candidate1", "candidate2"],
+          "properties": {"candidate1": {"enum": [null, "YES", "NO"]}, "candidate2": {"enum": [null, "YES", "NO"]}}
+        },
+        "notes": {"type": "string"}
+      }
+    }
+  }
+}
