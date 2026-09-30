@@ -1,0 +1,1 @@
+{"version":"fictional-test","sourceLocale":"en","targetLocale":"zh-TW","commonRules":["Preserve runtime tokens exactly."],"categoryRules":{"skill_spell":["Use concise ability wording."],"item":["Use concise item wording."],"quest":["Use clear journal wording."]},"glossary":[{"source":"charm","target":"護符"}]}

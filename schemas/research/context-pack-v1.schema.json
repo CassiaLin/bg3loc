@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CassiaLin/bg3loc/schemas/research/context-pack-v1.schema.json",
+  "title": "B1-02 source-only context pack",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "target", "relatedFields", "structuralEvidence"],
+  "properties": {
+    "schemaVersion": {"const": "b1-02-context-pack/1"},
+    "target": {
+      "type": "object", "additionalProperties": false,
+      "required": ["contentUid", "category", "entityKey", "fieldRole", "sourceText"],
+      "properties": {
+        "contentUid": {"type": "string", "minLength": 1},
+        "category": {"enum": ["skill_spell", "item", "quest"]},
+        "entityKey": {"type": "string", "minLength": 1},
+        "fieldRole": {"type": "string", "minLength": 1},
+        "sourceText": {"type": "string", "minLength": 1}
+      }
+    },
+    "relatedFields": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["contentUid", "fieldRole", "sourceText", "truncated"],
+        "properties": {
+          "contentUid": {"type": "string", "minLength": 1},
+          "fieldRole": {"type": "string", "minLength": 1},
+          "sourceText": {"type": "string", "minLength": 1},
+          "truncated": {"type": "boolean"}
+        }
+      }
+    },
+    "structuralEvidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["entityType", "entityKey", "evidenceType", "resourceIdentity"],
+      "properties": {
+        "entityType": {"enum": ["StatsEntry", "GameObjectTemplate", "Quest"]},
+        "entityKey": {"type": "string", "minLength": 1},
+        "evidenceType": {"enum": ["StatsDefinition", "GameObjectTemplate", "QuestJournal"]},
+        "resourceIdentity": {"type": "string"}
+      }
+    }
+  }
+}

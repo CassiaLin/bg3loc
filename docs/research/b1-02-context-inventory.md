@@ -1,0 +1,13 @@
+# B1-02 Context inventory / 同一實體脈絡盤點
+
+**Framework audit only / 僅盤點程式能力。** No BG3 corpus was available on this machine. These are possible structural signals, not measured coverage. / 本機沒有 BG3 語料；以下是程式可提供的結構線索，不代表實際覆蓋率。
+
+| Category / 類別 | Entity identity / 實體識別 | Field roles and source / 欄位及原文 | Structural metadata / 結構證據 | Prompt status / 使用狀態 |
+|---|---|---|---|---|
+| `skill_spell` | Stats `entryName` from `stats.py`; `using` is a parent link, not the same entity. / stats 的 entryName；using 是繼承邊，不是同一實體。 | `fieldName` (DisplayName, Description, ExtraDescription, ShortDescription, Tooltip and gender variants) + source text joined later by ContentUid. / 欄名與日後依 UID 接合的原文。 | `entryType`, `using`, provider, resource path, ContentUid. / 類型、父項、來源及 UID。 | **CONDITIONAL**: use only resolved same-entry occurrences and source-side text. Parent text needs separate evidence. / 僅可使用確認為同一 entry 的原文；父項不可直接視為同一實體。 |
+| `item` | Explicit GameObject template identity is required. `ui_skill_universe.py` exposes occurrence `entity_name`, but this may be a generic XML node name; stats Weapon/Armor/Object is another family. / 必須有明確 template 身分；現有 occurrence 名稱可能只是一般 XML 節點。 | `field_name` and ContentUid are exposed; source text must be joined from localization records. / 可得欄名與 UID；原文須另行接合。 | Provider and internal path are available; neither alone proves item identity. / 有來源與路徑，但單憑兩者不足以證明物件身分。 | **CONDITIONAL** only with an explicit template ID and resource identity. Generic node or whole filename grouping is **NOT FOR PROMPT**. / 需明確 template ID 與資源身分；一般節點或整檔分組不可用。 |
+| `quest` | `quest.py` exposes nearest enclosing node `entityId`. The `node#ordinal` fallback is not a durable identity. / 可得最近節點 entityId；node#序號只是退路。 | `fieldName`, `fieldRole` (`QuestTitle`, `QuestDescription`, `QuestField`), ContentUid; source text joined later. / 可得欄名、角色、UID；原文須另接。 | Quest journal evidence and resource path. / 任務日誌結構證據與資源路徑。 | **CONDITIONAL** with explicit entityId; ordinal fallback is **NOT FOR PROMPT**. / 明確 entityId 可用；序號退路不可用。 |
+
+The normalized localization record contains source text but no structural entity. `BatchInputRecord` group candidates and `contextGroupKeys` help batch translations; they are not proof that two fields belong to one entity. `translation_request.py`, `prompt_assembly.py`, and `chat_prompt.py` expose the v1.3 baseline inputs and protected token rules. / 標準化語系記錄有原文但無實體身分；批次群組鍵不能當同實體證據。v1.3 prompt 程式提供基線欄位與保護 token 規則。
+
+**SAFE / 安全** means source text plus proven structural identity only. Target translations, reference translations, provider output, absolute private paths, and broad shared-context hits are **NOT FOR PROMPT / 不可入 prompt**.

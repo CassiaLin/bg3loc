@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CassiaLin/bg3loc/schemas/research/context-experiment-manifest-v1.schema.json",
+  "title": "B1-02 offline experiment manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "sourceCorpusFingerprint", "sampleCount", "categoryCounts", "selectionPolicy", "maxRelatedFields", "maxContextChars", "sampleFingerprint", "providerExecution", "coverage", "categoryMetrics", "contextLimits", "rulesetFingerprint", "promptVariantHashes"],
+  "properties": {
+    "schemaVersion": {"const": "b1-02/1"},
+    "sourceCorpusFingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "sampleCount": {"type": "integer", "minimum": 0},
+    "categoryCounts": {"type": "object", "required": ["skill_spell", "item", "quest"], "additionalProperties": {"type": "integer", "minimum": 0}},
+    "selectionPolicy": {"type": "string", "minLength": 1},
+    "maxRelatedFields": {"type": "integer", "minimum": 1},
+    "maxContextChars": {"type": "integer", "minimum": 1},
+    "sampleFingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "providerExecution": {"const": "not-run"},
+    "provider": {"type": "null"},
+    "model": {"type": "null"},
+    "coverage": {"type": "object"},
+    "categoryMetrics": {"type": "object"},
+    "contextLimits": {"type": "object"},
+    "rulesetFingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "promptVariantHashes": {"type": "object", "required": ["A", "B"], "additionalProperties": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+  }
+}
