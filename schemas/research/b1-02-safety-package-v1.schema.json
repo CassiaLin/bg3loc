@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CassiaLin/bg3loc/schemas/research/b1-02-safety-package-v1.schema.json",
+  "title": "B1-02 safety validation package manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "experiment", "status", "reviewStatus", "sourceLocale",
+    "targetLocale", "pilotSampleFingerprint", "safetySubsetFingerprint",
+    "requestPackageFingerprint", "sampleCount", "requestCount", "categoryCounts",
+    "selectionPolicy", "orderingPolicy", "acceptancePrinciple", "safetyQuestions",
+    "trackedFailurePatterns", "requestIds", "createdWithVersion"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "b1-02-safety-package/1"},
+    "experiment": {"const": "B1-02 Same-Entity Context Safety Validation"},
+    "status": {"const": "READY"},
+    "reviewStatus": {"const": "PENDING"},
+    "sourceLocale": {"const": "English"},
+    "targetLocale": {"const": "ChineseTraditional"},
+    "pilotSampleFingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "safetySubsetFingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "requestPackageFingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "sampleCount": {"const": 25},
+    "requestCount": {"const": 50},
+    "categoryCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["skill_spell", "item", "quest"],
+      "properties": {
+        "skill_spell": {"const": 10},
+        "item": {"const": 10},
+        "quest": {"const": 5}
+      }
+    },
+    "selectionPolicy": {"type": "string", "minLength": 1},
+    "orderingPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["description", "safetySalt"],
+      "properties": {
+        "description": {"type": "string", "minLength": 1},
+        "safetySalt": {"type": "string", "minLength": 1}
+      }
+    },
+    "acceptancePrinciple": {"type": "string", "minLength": 1},
+    "safetyQuestions": {"type": "array", "minItems": 5, "maxItems": 5, "items": {"type": "string", "minLength": 1}},
+    "trackedFailurePatterns": {"type": "array", "minItems": 5, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "requestIds": {"type": "array", "minItems": 50, "maxItems": 50, "uniqueItems": true, "items": {"type": "string", "pattern": "^safety-req-[0-9]{6}$"}},
+    "createdWithVersion": {"type": "string", "minLength": 1}
+  }
+}

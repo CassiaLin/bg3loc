@@ -2,7 +2,9 @@
 
 ## Status / 狀態
 
-**Framework = READY; Real-Corpus Validation Phase 1 = ACCEPTED; Provider A/B Pilot = PENDING; Human Quality Evaluation = PENDING; Production Integration = NOT STARTED.** This branch supplies an offline experiment format and real source-side measurements. It does not show that context improves translation. / 本分支提供離線實驗框架與真實來源端量測，尚未證明脈絡會改善翻譯。
+**Framework = READY; Real-Corpus Validation Phase 1 = ACCEPTED; B1-02 Safety Validation Package = READY; Safety Review = PENDING; Production Integration = NOT STARTED.** This branch supplies an offline experiment format, real source-side measurements, and a small safety-review package. It does not establish that context improves translation or is safe to adopt. / 本分支提供離線實驗框架、真實來源端量測與小型安全審查套件；尚未證明脈絡改善翻譯或可安全採用。
+
+The current research question is: **When structural context is reliable, can it be supplied without causing systematic translation degradation?** BG3Loc aims to provide reliable and useful translation material; it does not need to prove that context significantly outperforms the baseline. / 現階段研究問題是：在結構脈絡可靠時，提供脈絡是否不會造成系統性的翻譯劣化？BG3Loc 的目標是提供可靠且有用的翻譯材料，不要求證明脈絡顯著勝過 baseline。
 
 ## Input and policy / 輸入與政策
 
@@ -33,11 +35,11 @@ The exact full prompts and hashes are written to `b1-02-prompts.jsonl`; manifest
 - Real corpus coverage measurement = **COMPLETE** / 真實覆蓋率已測
 - Real sample generation = **COMPLETE** / 真實樣本已產生
 - Prompt character delta measurement = **COMPLETE**; token estimate = **NOT MEASURED** / 真實字元增量已測，token 估計未測
-- Provider A/B pilot = **PENDING** / 模型試驗待做
-- Human quality evaluation = **PENDING** / 人工評分待做
-- Production integration decision = **PENDING** / 正式整合決策待做
+- Safety validation package = **READY** / 安全驗證套件已備妥
+- Safety review = **PENDING** / 安全人工審查待做
+- Production integration = **NOT STARTED** / 正式整合尚未開始
 
-The later pilot should use independent requests with identical provider, model, settings, ruleset, glossary, and protected token policy; its only treatment is related source context. Use blind review and report by category and target/related role pair, including better/worse/tie and contamination cases. / 後續試驗應讓兩版使用相同模型設定與規則、獨立請求；盲評時按類別及欄位組合報告勝負與污染案例。
+The safety review uses independent requests with identical ruleset, glossary, and protected-token policy; its only treatment is related source context. Report degradation and contamination separately for each category and field role. The earlier preference-oriented A/B infrastructure remains available for future research. / 安全審查使用相同規則、詞彙與保護 token 政策的獨立請求，唯一處理差異是同實體來源脈絡；劣化與污染需按類別及欄位角色分開回報。原有偏好導向 A/B 基礎設施保留供後續研究。
 
 ## Real-Corpus Validation Phase 1 / 真實語料驗證第一階段
 
@@ -119,3 +121,42 @@ python -m bg3loc.research.portable_translation build-review `
 ```
 
 Phase 2A readiness means only that the portable A/B exchange and round trip are ready. External translation, human quality evaluation, and any production integration remain pending; this phase does not establish that context improves translation.
+
+## Safety Validation Package
+
+The safety validation reuses the frozen Phase 2 pilot and its verified structural identity. It does not revalidate entity linkage or resample Phase 1. A deterministic, versioned selection takes 10 skill/spell, 10 item, and 5 quest targets across observed field-role, source-length, and related-field-count strata. The resulting 25 target rows produce 50 anonymous, provider-neutral A/B requests. No provider is called and no translation is generated.
+
+```powershell
+$env:PYTHONPATH = 'src'
+python -m bg3loc.research.safety_validation export `
+  --pilot-sample workspace/b1-02/phase2/pilot-sample.jsonl `
+  --pilot-manifest workspace/b1-02/phase2/b1-02-phase2-pilot-manifest.json `
+  --output workspace/b1-02/safety-validation
+```
+
+The ignored output directory contains `safety-requests.jsonl`, `safety-response-template.jsonl`, `safety-review.csv`, and `safety-manifest.json`. It also contains `safety-internal-request-map.json` and `safety-review-hidden-key.json`; keep both private. The public requests expose no sample ID, variant, ContentUid, or arm mapping. An external source returns only `requestId` and `translatedText` in the response template.
+
+After all 50 translations return, validate the request IDs, non-empty output, and protected syntax, then populate the anonymous candidates:
+
+```powershell
+python -m bg3loc.research.safety_validation build-review `
+  --package workspace/b1-02/safety-validation `
+  --responses '<RETURNED_JSONL_OR_CSV>'
+```
+
+The primary reviewer sees `candidate1` and `candidate2`, with no variant label. Reviewers answer the five safety questions by recording `worseCandidate`, `contaminationCandidate`, a reason, and an optional failure pattern. During controlled unblinding, the hidden key derives `bWorseThanA` and `contextContamination`; those requested columns stay blank during primary blind review. `bBetterThanA` is optional and does not drive acceptance.
+
+The review tracks whether B adds unsupported information, misreads the target because of context, becomes clearly less natural, breaks terminology or entity consistency, or copies context into the output. Repeated patterns are classified as context contamination, wrong sense selection, over-translation, cross-field leakage, or unnatural wording caused by context. A small number of isolated worse cases may be acceptable, while a recurring category- or field-specific failure requires policy revision.
+
+After review, aggregate the completed sheet without a significance test:
+
+```powershell
+python -m bg3loc.research.safety_validation summarize `
+  --review workspace/b1-02/safety-validation/safety-review.csv `
+  --hidden-key workspace/b1-02/safety-validation/safety-review-hidden-key.json `
+  --output workspace/b1-02/safety-validation/safety-summary.json
+```
+
+The summary reports `reviewedPairs`, `bWorseCount`, `contaminationCount`, `unclearCount`, and recurring failure patterns for each category, plus field-role breakdowns. It never assigns an adoption result automatically. Human review may conclude `SAFE TO ADOPT`, `ADOPT WITH RESTRICTIONS`, or `NOT SAFE TO ADOPT`, separately for skill/spell, item, and quest. The acceptance principle is: reliable structural context plus no meaningful systematic degradation may permit context to be supplied to translators or models. No p-value, confidence interval, win-rate threshold, or significance test is used.
+
+Until returned translations and human review exist, the only valid status is **B1-02 Safety Validation Package = READY; Safety Review = PENDING; Production Integration = NOT STARTED.**
