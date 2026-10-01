@@ -1,4 +1,9 @@
-"""Provider-neutral portable translation exchange for B1-02 Phase 2A."""
+"""Provider-neutral portable translation exchange for B1-02 Phase 2A.
+
+This research-only module exports the frozen Phase 2 pilot, validates returned
+translations, restores hidden experiment identity, and builds blind review
+artifacts.  It never calls a translation provider or writes production state.
+"""
 from __future__ import annotations
 
 import argparse
@@ -7,312 +12,416 @@ import csv
 from hashlib import sha256
 import json
 from pathlib import Path
+from typing import Any, Iterable
 
 from bg3loc.protected_syntax import extract_protected_tokens, validate_protected_syntax
-from bg3loc.research.context_experiment import SAFETY, canonical, digest
+from bg3loc.research.context_experiment import blind_candidate_order, canonical, digest
 from bg3loc.research.context_pilot import read_jsonl, validate_pair, write_json, write_jsonl
 
-SCHEMA_VERSION = "b1-02-portable-package/1"
-REQUEST_SCHEMA = "b1-02-portable-request/1"
-RESPONSE_SCHEMA = "b1-02-portable-response/1"
-PACKAGE_SALT = "b1-02-phase2a-portable-order-v1"
-ORDERING_POLICY = "SHA256(sampleId + ':' + variant + ':' + packageSalt), ascending; sequential anonymous requestId"
-CREATED_WITH_VERSION = "b1-02-phase2a/1"
-EXPECTED_PILOT_FINGERPRINT = "a9ad899d2bd2d64b4bf971af2b354aeec4e8012a97ef45bb17cb5ca2e9d783b1"
-REQUEST_FIELDS = ("requestId", "sourceLocale", "targetLocale", "category", "fieldRole", "instructions", "sourceText", "context", "promptText")
-FORBIDDEN_PUBLIC_KEYS = {"sampleId", "variant", "contentUid", "ContentUid", "promptFingerprint", "baselinePrompt", "contextPrompt"}
+
+REQUEST_SCHEMA_VERSION = "portable-translation-request/1"
+RESPONSE_SCHEMA_VERSION = "portable-translation-response/1"
+MANIFEST_SCHEMA_VERSION = "portable-package-manifest/1"
+PACKAGE_SALT = "b1-02-phase2a-portable-v1"
+CANONICAL_PILOT_FINGERPRINT = "a9ad899d2bd2d64b4bf971af2b354aeec4e8012a97ef45bb17cb5ca2e9d783b1"
+CANONICAL_SAMPLE_COUNTS = {"skill_spell": 40, "item": 40, "quest": 20}
+ORDERING_POLICY = "sort SHA256(sampleId + variant + packageSalt); assign sequential requestId"
+CREATED_WITH_VERSION = "bg3loc-1.3.0"
+PUBLIC_FIELDS = (
+    "requestId", "sourceLocale", "targetLocale", "category", "fieldRole",
+    "instructions", "sourceText", "context", "promptText",
+)
+RESPONSE_FIELDS = ("requestId", "translatedText", "translatorNotes")
+BLIND_FIELDS = (
+    "sampleId", "category", "fieldRole", "sourceText", "candidate1", "candidate2",
+    "meaningAccuracy1", "meaningAccuracy2", "naturalness1", "naturalness2",
+    "terminologyConsistency1", "terminologyConsistency2", "entityConsistency1",
+    "entityConsistency2", "preferredCandidate", "bothBad",
+    "contaminationSuspected", "notes",
+)
 
 
-def _read_json(path: Path):
-    return json.loads(path.read_text(encoding="utf-8-sig"))
+class PortableResponseError(ValueError):
+    """A response file cannot be safely associated with this package."""
+
+    def __init__(self, message: str, report: dict[str, Any]):
+        super().__init__(message)
+        self.report = report
 
 
-def _csv_write(path: Path, fieldnames, rows):
+def _write_csv(path: Path, fieldnames: Iterable[str], rows: Iterable[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8-sig", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=fieldnames, lineterminator="\n")
+        writer = csv.DictWriter(stream, fieldnames=list(fieldnames), lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
 
 
-def _instructions(messages):
-    return messages[0]["content"]
+def _context_text(context: list[dict[str, str]]) -> str:
+    return "\n".join(f"[{field['fieldRole']}] {field['sourceText']}" for field in context)
 
 
-def _prompt_text(instructions, source_locale, target_locale, category, field_role, source_text, context):
-    lines = [instructions, "", f"Source locale: {source_locale}", f"Target locale: {target_locale}",
-             f"Category: {category}", f"Field role: {field_role}", "", "Target source text:", source_text]
-    if context:
-        lines.extend(["", "Related source fields (context only):"])
-        lines.extend(f"[{field['fieldRole']}] {field['sourceText']}" for field in context)
-    lines.extend(["", "Return only the translation of the target source text."])
-    return "\n".join(lines)
+def _prompt_text(messages: list[dict[str, str]]) -> str:
+    """Preserve renderer semantics while removing experiment-internal identity."""
+    payload = json.loads(messages[1]["content"])
+    payload.pop("ContentUid", None)
+    payload.pop("contextGroupKeys", None)
+    return messages[0]["content"] + "\n\n" + canonical(payload)
 
 
-def _validate_pilot(sample, pilot_manifest):
-    if pilot_manifest.get("pilotSampleFingerprint") != EXPECTED_PILOT_FINGERPRINT:
-        raise ValueError("unexpected pilot sample fingerprint")
-    if digest([row["contextPack"] for row in sample]) != EXPECTED_PILOT_FINGERPRINT:
-        raise ValueError("pilot sample content does not match frozen fingerprint")
-    if len(sample) != 100:
-        raise ValueError("portable package requires the frozen 100-row pilot")
-    if Counter(row["contextPack"]["target"]["category"] for row in sample) != {"skill_spell": 40, "item": 40, "quest": 20}:
-        raise ValueError("pilot category counts differ from frozen policy")
+def _load_manifest(path: Path) -> dict[str, Any]:
+    value = json.loads(path.read_text(encoding="utf-8-sig"))
+    if not isinstance(value, dict):
+        raise ValueError("manifest must be an object")
+    return value
+
+
+def _validated_sample(sample_path: Path, pilot_manifest_path: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    sample = read_jsonl(sample_path)
+    manifest = _load_manifest(pilot_manifest_path)
+    if not sample:
+        raise ValueError("pilot sample is empty")
+    if digest([row["contextPack"] for row in sample]) != manifest.get("pilotSampleFingerprint"):
+        raise ValueError("frozen pilot sample fingerprint mismatch")
+    if manifest.get("plannedCalls") != len(sample) * 2:
+        raise ValueError("pilot planned call count mismatch")
+    seen = set()
     for row in sample:
         validate_pair(row)
-        if row["sampleId"] != digest(row["contextPack"]["target"]):
-            raise ValueError("pilot sample ID mismatch")
+        sample_id = row.get("sampleId")
+        if sample_id != digest(row["contextPack"]["target"]):
+            raise ValueError("sample ID differs from frozen target")
+        if sample_id in seen:
+            raise ValueError("duplicate sample ID")
+        seen.add(sample_id)
+    return sample, manifest
 
 
-def _portable_rows(sample):
-    arms = []
+def _build_entries(sample: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    entries = []
     for row in sample:
         target = row["contextPack"]["target"]
-        for variant, prompt_key in (("A", "baseline"), ("B", "context")):
-            messages = row[prompt_key + "Prompt"]
+        for variant, prefix in (("A", "baseline"), ("B", "context")):
+            messages = row[prefix + "Prompt"]
+            instructions = messages[0]["content"]
             context = [] if variant == "A" else [
                 {"fieldRole": field["fieldRole"], "sourceText": field["sourceText"]}
                 for field in row["contextPack"]["relatedFields"]
             ]
-            instructions = _instructions(messages)
-            arms.append({"sampleId": row["sampleId"], "variant": variant,
-                         "contentUid": target["contentUid"], "promptFingerprint": row[prompt_key + "PromptHash"],
-                         "sortKey": sha256(f"{row['sampleId']}:{variant}:{PACKAGE_SALT}".encode()).hexdigest(),
-                         "public": {"sourceLocale": "English", "targetLocale": "ChineseTraditional",
-                                    "category": target["category"], "fieldRole": target["fieldRole"],
-                                    "instructions": instructions, "sourceText": target["sourceText"], "context": context,
-                                    "promptText": _prompt_text(instructions, "English", "ChineseTraditional",
-                                                               target["category"], target["fieldRole"], target["sourceText"], context)}})
-    arms.sort(key=lambda arm: (arm["sortKey"], arm["sampleId"], arm["variant"]))
-    requests, internal = [], []
-    for index, arm in enumerate(arms, 1):
-        request_id = f"req-{index:06d}"
-        public = {"requestId": request_id, **arm["public"]}
-        if FORBIDDEN_PUBLIC_KEYS & public.keys():
-            raise ValueError("public request contains internal identity")
-        requests.append(public)
-        internal.append({"requestId": request_id, "sampleId": arm["sampleId"], "variant": arm["variant"],
-                         "contentUid": arm["contentUid"], "promptFingerprint": arm["promptFingerprint"]})
-    return requests, internal
+            prompt_fingerprint = row[prefix + "PromptHash"]
+            if prompt_fingerprint != digest(messages):
+                raise ValueError("frozen prompt fingerprint mismatch")
+            entries.append({
+                "sampleId": row["sampleId"],
+                "variant": variant,
+                "contentUid": target["contentUid"],
+                "promptFingerprint": prompt_fingerprint,
+                "sortKey": sha256((row["sampleId"] + variant + PACKAGE_SALT).encode("utf-8")).hexdigest(),
+                "public": {
+                    "sourceLocale": "English",
+                    "targetLocale": "ChineseTraditional",
+                    "category": target["category"],
+                    "fieldRole": target["fieldRole"],
+                    "instructions": instructions,
+                    "sourceText": target["sourceText"],
+                    "context": context,
+                    "promptText": _prompt_text(messages),
+                },
+            })
+    entries.sort(key=lambda entry: (entry["sortKey"], entry["sampleId"], entry["variant"]))
+    return entries
 
 
-def _package_readme():
-    return """# B1-02 portable translation package
+def _package_readme() -> str:
+    return """# B1-02 Portable Translation Package
 
-This package contains anonymous translation requests. Each request is independent.
+This package contains anonymous, provider-neutral translation requests.
 
-1. Do not edit `requestId`.
-2. Translate only `sourceText`.
-3. `context` is provided only to help you understand the target.
-4. Do not translate context fields or add facts that appear only in context.
+1. Do not change `requestId`.
+2. Translate only the target `sourceText`.
+3. `context` is provided only to help understanding.
+4. Do not translate, return, or add information found only in context.
 5. Put only the translation in `translatedText`.
-6. Return either JSONL or CSV. `translatorNotes` is optional.
+6. Return either CSV or JSONL. `translatorNotes` is optional.
 
-## Human translation team using CSV
+## Human translation team (CSV)
 
-Fill `translatedText`, optionally fill `translatorNotes`, and do not edit `requestId`. Keep the file in UTF-8 format.
+Fill `translatedText`, optionally fill `translatorNotes`, and do not edit `requestId`.
 
-## External language model
+## External LLM
 
-Send `promptText` as a standalone prompt. Store only the returned translation in `translatedText`; do not store model explanations.
-
-The files do not identify experiment arms. Do not try to pair or reorder requests. Return partial work if needed; the importer will report missing rows.
+Send `promptText` to the model. Store only the returned translation in
+`translatedText`; do not store model explanations.
 """
 
 
-def export_package(pilot_sample: Path, pilot_manifest_path: Path, output: Path):
-    sample = read_jsonl(pilot_sample)
-    pilot_manifest = _read_json(pilot_manifest_path)
-    _validate_pilot(sample, pilot_manifest)
-    requests, internal = _portable_rows(sample)
-    request_fingerprint = digest(requests)
-    manifest = {"schemaVersion": SCHEMA_VERSION, "experiment": "B1-02 Same-Entity Context Experiment Phase 2A",
-                "sourceLocale": "English", "targetLocale": "ChineseTraditional", "requestCount": len(requests),
-                "sampleCount": len(sample),
-                "categoryCounts": dict(sorted(Counter(r["contextPack"]["target"]["category"] for r in sample).items())),
-                "requestCategoryCounts": dict(sorted(Counter(r["category"] for r in requests).items())),
-                "pilotSampleFingerprint": pilot_manifest["pilotSampleFingerprint"],
-                "requestPackageFingerprint": request_fingerprint, "orderingPolicy": ORDERING_POLICY,
-                "packageSalt": PACKAGE_SALT, "createdWithVersion": CREATED_WITH_VERSION,
-                "requestIdsFingerprint": digest([r["requestId"] for r in requests])}
+def export_package(sample_path: Path, pilot_manifest_path: Path, output: Path,
+                   require_canonical_pilot: bool = False) -> dict[str, Any]:
+    """Export one deterministic portable package from the frozen pilot sample."""
+    sample, pilot_manifest = _validated_sample(sample_path, pilot_manifest_path)
+    if require_canonical_pilot:
+        counts = Counter(row["contextPack"]["target"]["category"] for row in sample)
+        if pilot_manifest["pilotSampleFingerprint"] != CANONICAL_PILOT_FINGERPRINT:
+            raise ValueError("pilot fingerprint is not the frozen B1-02 Phase 2 sample")
+        if dict(counts) != CANONICAL_SAMPLE_COUNTS:
+            raise ValueError("pilot category counts must be skill_spell=40, item=40, quest=20")
+    entries = _build_entries(sample)
+    requests = []
+    internal = []
+    for index, entry in enumerate(entries, 1):
+        request_id = f"req-{index:06d}"
+        public = {"requestId": request_id, **entry["public"]}
+        requests.append(public)
+        internal.append({
+            "requestId": request_id,
+            "sampleId": entry["sampleId"],
+            "variant": entry["variant"],
+            "ContentUid": entry["contentUid"],
+            "promptFingerprint": entry["promptFingerprint"],
+        })
+
+    category_counts = dict(Counter(row["contextPack"]["target"]["category"] for row in sample))
+    package_fingerprint = digest(requests)
+    manifest = {
+        "schemaVersion": MANIFEST_SCHEMA_VERSION,
+        "experiment": "B1-02 Same-Entity Context Experiment Phase 2A",
+        "sourceLocale": "English",
+        "targetLocale": "ChineseTraditional",
+        "requestCount": len(requests),
+        "sampleCount": len(sample),
+        "categoryCounts": {category: category_counts.get(category, 0) for category in ("skill_spell", "item", "quest")},
+        "pilotSampleFingerprint": pilot_manifest["pilotSampleFingerprint"],
+        "requestPackageFingerprint": package_fingerprint,
+        "orderingPolicy": {"description": ORDERING_POLICY, "packageSalt": PACKAGE_SALT},
+        "createdWithVersion": CREATED_WITH_VERSION,
+        "requestIds": [row["requestId"] for row in requests],
+    }
+
+    output.mkdir(parents=True, exist_ok=True)
     write_jsonl(output / "translation-requests.jsonl", requests)
-    _csv_write(output / "translation-requests.csv",
+    _write_csv(output / "translation-requests.csv",
                ("requestId", "category", "fieldRole", "sourceText", "contextText", "promptText", "translatedText", "translatorNotes"),
                ({"requestId": row["requestId"], "category": row["category"], "fieldRole": row["fieldRole"],
-                 "sourceText": row["sourceText"], "contextText": "\n".join(f"[{f['fieldRole']}] {f['sourceText']}" for f in row["context"]),
-                 "promptText": row["promptText"], "translatedText": "", "translatorNotes": ""} for row in requests))
-    write_jsonl(output / "response-template.jsonl",
-                ({"requestId": row["requestId"], "translatedText": "", "translatorNotes": ""} for row in requests))
+                 "sourceText": row["sourceText"], "contextText": _context_text(row["context"]),
+                 "promptText": row["promptText"], "translatedText": "", "translatorNotes": ""}
+                for row in requests))
+    response_rows = [{"requestId": row["requestId"], "translatedText": "", "translatorNotes": ""} for row in requests]
+    write_jsonl(output / "response-template.jsonl", response_rows)
     write_json(output / "package-manifest.json", manifest)
-    write_json(output / "internal-request-map.json", {"schemaVersion": "b1-02-internal-request-map/1",
-                                                       "requestPackageFingerprint": request_fingerprint, "requests": internal})
+    write_json(output / "internal-request-map.json", internal)
     (output / "README.md").write_text(_package_readme(), encoding="utf-8")
-    audit = audit_package(output)
-    write_json(output / "package-audit.json", audit)
+    write_json(output / "package-audit.json", audit_package(output))
     return manifest
 
 
-def _load_requests(package: Path):
-    manifest = _read_json(package / "package-manifest.json")
-    requests = read_jsonl(package / "translation-requests.jsonl")
-    internal_doc = _read_json(package / "internal-request-map.json")
-    if digest(requests) != manifest.get("requestPackageFingerprint"):
-        raise ValueError("request package fingerprint mismatch")
-    if internal_doc.get("requestPackageFingerprint") != manifest.get("requestPackageFingerprint"):
-        raise ValueError("internal map belongs to a different package")
-    if len(requests) != manifest.get("requestCount") or len(internal_doc.get("requests", [])) != len(requests):
-        raise ValueError("package request count mismatch")
-    public = {row["requestId"]: row for row in requests}
-    internal = {row["requestId"]: row for row in internal_doc["requests"]}
-    if len(public) != len(requests) or len(internal) != len(requests) or set(public) != set(internal):
-        raise ValueError("package IDs are duplicate or inconsistent")
-    return manifest, requests, public, internal
+def _load_package(package: Path) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    manifest = _load_manifest(package / "package-manifest.json")
+    public_rows = read_jsonl(package / "translation-requests.jsonl")
+    internal_rows = json.loads((package / "internal-request-map.json").read_text(encoding="utf-8-sig"))
+    expected = manifest.get("requestIds", [])
+    if manifest.get("requestPackageFingerprint") != digest(public_rows):
+        raise ValueError("portable request package fingerprint mismatch")
+    if expected != [row["requestId"] for row in public_rows]:
+        raise ValueError("manifest request IDs differ from canonical requests")
+    if len(internal_rows) != len(expected) or {row["requestId"] for row in internal_rows} != set(expected):
+        raise ValueError("internal request map differs from manifest")
+    return manifest, public_rows, internal_rows
 
 
-def audit_package(package: Path):
-    manifest, requests, public, internal = _load_requests(package)
-    pairs = Counter(row["sampleId"] for row in internal.values())
-    public_text = "\n".join(canonical(row) for row in requests)
-    return {"requestCount": len(requests), "uniqueRequestIds": len(public), "samplePairs": sum(v == 2 for v in pairs.values()),
-            "completePairMappings": sum({r["variant"] for r in internal.values() if r["sampleId"] == sid} == {"A", "B"} for sid in pairs),
-            "contentUidExposedExternally": sum('"contentUid"' in canonical(row) or '"ContentUid"' in canonical(row) for row in requests),
-            "variantLabelsExposedExternally": sum('"variant"' in canonical(row) or '"baseline"' in canonical(row) for row in requests),
-            "sampleIdExposedExternally": sum('"sampleId"' in canonical(row) for row in requests),
-            "requestPackageFingerprint": manifest["requestPackageFingerprint"],
-            "publicContainsInternalIdentity": any(token in public_text for token in ('"sampleId"', '"contentUid"', '"variant"'))}
+def audit_package(package: Path) -> dict[str, Any]:
+    """Produce the required static anonymity and pair-completeness audit."""
+    manifest, public_rows, internal_rows = _load_package(package)
+    variants: dict[str, set[str]] = defaultdict(set)
+    for row in internal_rows:
+        variants[row["sampleId"]].add(row["variant"])
+    public = [canonical(row) for row in public_rows]
+    return {
+        "requestCount": len(public_rows),
+        "uniqueRequestIds": len({row["requestId"] for row in public_rows}),
+        "samplePairs": sum(len(value) == 2 for value in variants.values()),
+        "completePairMappings": sum(value == {"A", "B"} for value in variants.values()),
+        "contentUidExposedExternally": sum('"ContentUid"' in row or '"contentUid"' in row for row in public),
+        "variantLabelsExposedExternally": sum('"variant"' in row for row in public),
+        "sampleIdExposedExternally": sum('"sampleId"' in row for row in public),
+        "requestPackageFingerprint": manifest["requestPackageFingerprint"],
+    }
 
 
-def _load_responses(path: Path):
-    suffix = path.suffix.casefold()
+def _read_responses(path: Path) -> list[dict[str, Any]]:
+    suffix = path.suffix.lower()
     if suffix == ".jsonl":
-        return read_jsonl(path)
-    if suffix == ".csv":
-        with path.open(encoding="utf-8-sig", newline="") as stream:
-            return list(csv.DictReader(stream))
-    raise ValueError("responses must be JSONL or CSV")
+        rows = read_jsonl(path)
+    elif suffix == ".csv":
+        with path.open("r", encoding="utf-8-sig", newline="") as stream:
+            rows = list(csv.DictReader(stream))
+    else:
+        raise ValueError("response file must be JSONL or CSV")
+    normalized = []
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError("response row must be an object")
+        normalized.append({
+            "requestId": str(row.get("requestId", "")).strip(),
+            "translatedText": row.get("translatedText", "") if isinstance(row.get("translatedText", ""), str) else "",
+            "translatorNotes": row.get("translatorNotes", "") if isinstance(row.get("translatorNotes", ""), str) else "",
+        })
+    return normalized
 
 
-def import_responses(package: Path, responses_path: Path, output: Path):
-    manifest, requests, public, internal = _load_requests(package)
-    responses = _load_responses(responses_path)
-    seen, duplicate = {}, set()
-    for row in responses:
-        request_id = str(row.get("requestId", "")).strip()
-        if request_id in seen:
-            duplicate.add(request_id)
-        seen[request_id] = row
-    if duplicate:
-        raise ValueError("duplicate request IDs: " + ", ".join(sorted(duplicate)))
-    unknown = sorted(set(seen) - set(public))
-    if unknown:
-        raise ValueError("unknown request IDs: " + ", ".join(unknown))
-    imported = []
-    counts = Counter()
-    for request in requests:
-        request_id = request["requestId"]
-        mapping = internal[request_id]
-        raw = seen.get(request_id)
-        errors = []
-        if raw is None:
-            status, translated, notes = "missing", "", ""
-        else:
-            translated = str(raw.get("translatedText", ""))
-            notes = str(raw.get("translatorNotes", ""))
-            if not translated.strip():
-                errors.append("EMPTY_TRANSLATION")
-            for issue in validate_protected_syntax(extract_protected_tokens(request["sourceText"]), translated):
-                errors.append("PROTECTED_SYNTAX_" + issue.kind.upper())
-            status = "valid" if not errors else "invalid"
-        counts[status] += 1
-        imported.append({"requestId": request_id, "sampleId": mapping["sampleId"], "variant": mapping["variant"],
-                         "contentUid": mapping["contentUid"], "promptFingerprint": mapping["promptFingerprint"],
-                         "category": request["category"], "fieldRole": request["fieldRole"], "sourceText": request["sourceText"],
-                         "translatedText": translated, "translatorNotes": notes, "status": status, "errorCodes": sorted(set(errors))})
-    summary = {"schemaVersion": "b1-02-portable-import/1", "requestPackageFingerprint": manifest["requestPackageFingerprint"],
-               "expected": len(requests), "received": len(seen), "valid": counts["valid"], "invalid": counts["invalid"],
-               "missing": counts["missing"], "duplicate": 0, "unknown": 0,
-               "packageComplete": len(seen) == len(requests) and counts["valid"] == len(requests)}
+def import_responses(package: Path, responses_path: Path, output: Path) -> dict[str, Any]:
+    """Validate portable responses and restore hidden sample/variant identity."""
+    manifest, public_rows, internal_rows = _load_package(package)
+    expected = manifest["requestIds"]
+
+    responses = _read_responses(responses_path)
+    counts = Counter(row["requestId"] for row in responses)
+    duplicates = sorted(request_id for request_id, count in counts.items() if count > 1)
+    unknown = sorted(set(counts) - set(expected))
+    report = {
+        "schemaVersion": "portable-import-report/1",
+        "requestCount": len(expected),
+        "received": len(set(counts) & set(expected)),
+        "missing": len(set(expected) - set(counts)),
+        "duplicate": len(duplicates),
+        "unknown": len(unknown),
+        "invalid": 0,
+        "valid": 0,
+        "complete": False,
+        "duplicateRequestIds": duplicates,
+        "unknownRequestIds": unknown,
+        "missingRequestIds": sorted(set(expected) - set(counts)),
+    }
     output.mkdir(parents=True, exist_ok=True)
+    if duplicates or unknown:
+        write_json(output / "import-report.json", report)
+        raise PortableResponseError("duplicate or unknown request ID", report)
+
+    response_by_id = {row["requestId"]: row for row in responses}
+    public_by_id = {row["requestId"]: row for row in public_rows}
+    internal_by_id = {row["requestId"]: row for row in internal_rows}
+    imported = []
+    for request_id in expected:
+        response = response_by_id.get(request_id)
+        mapping = internal_by_id[request_id]
+        error_codes = []
+        if response is None:
+            status = "missing"
+            translated = notes = ""
+        else:
+            translated = response["translatedText"]
+            notes = response["translatorNotes"]
+            if not translated.strip():
+                error_codes.append("EMPTY_TRANSLATION")
+            for issue in validate_protected_syntax(
+                    extract_protected_tokens(public_by_id[request_id]["sourceText"]), translated):
+                error_codes.append({
+                    "missing": "PROTECTED_TOKEN_MISSING",
+                    "added": "PROTECTED_TOKEN_ADDED",
+                    "markup": "PROTECTED_MARKUP_INVALID",
+                }[issue.kind])
+            status = "invalid" if error_codes else "valid"
+        imported.append({
+            "requestId": request_id,
+            "sampleId": mapping["sampleId"],
+            "variant": mapping["variant"],
+            "ContentUid": mapping["ContentUid"],
+            "status": status,
+            "errorCodes": sorted(set(error_codes)),
+            "translatedText": translated,
+            "translatorNotes": notes,
+        })
+    report["valid"] = sum(row["status"] == "valid" for row in imported)
+    report["invalid"] = sum(row["status"] == "invalid" for row in imported)
+    report["complete"] = report["received"] == report["requestCount"] and report["invalid"] == 0
     write_jsonl(output / "imported-results.jsonl", imported)
-    write_json(output / "import-summary.json", summary)
-    return summary
+    write_json(output / "import-report.json", report)
+    return report
 
 
-def build_review(package: Path, imported_path: Path, output: Path):
-    manifest, requests, public, internal = _load_requests(package)
-    imported = read_jsonl(imported_path)
-    if len({row["requestId"] for row in imported}) != len(imported):
+def build_blind_review(package: Path, imported_results: Path, output: Path) -> dict[str, Any]:
+    """Build deterministic blind pairs only where both hidden variants are valid."""
+    _, public_rows, internal_rows = _load_package(package)
+    public = {row["requestId"]: row for row in public_rows}
+    internal = {row["requestId"]: row for row in internal_rows}
+    results = read_jsonl(imported_results)
+    if len({row.get("requestId") for row in results}) != len(results):
         raise ValueError("imported results contain duplicate request IDs")
-    import_summary_path = imported_path.parent / "import-summary.json"
-    if import_summary_path.is_file() and _read_json(import_summary_path).get("requestPackageFingerprint") != manifest["requestPackageFingerprint"]:
-        raise ValueError("imported results belong to a different package")
-    for row in imported:
+    grouped: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
+    for row in results:
         request_id = row.get("requestId")
         if request_id not in internal:
             raise ValueError("imported results contain unknown request ID")
         mapping = internal[request_id]
-        if any(row.get(key) != mapping[key] for key in ("sampleId", "variant", "contentUid", "promptFingerprint")):
+        if any(row.get(key) != mapping[key] for key in ("sampleId", "variant", "ContentUid")):
             raise ValueError("imported result identity differs from internal map")
-    results = {row["requestId"]: row for row in imported}
-    by_sample = defaultdict(dict)
-    for request_id, mapping in internal.items():
-        row = results.get(request_id)
-        if row and row.get("status") == "valid":
-            by_sample[mapping["sampleId"]][mapping["variant"]] = (request_id, row)
-    blind, keys, diagnostics = [], [], []
-    for sample_id in sorted(by_sample):
-        pair = by_sample[sample_id]
-        if set(pair) != {"A", "B"}:
+        grouped[row["sampleId"]][row["variant"]] = row
+    blind_rows = []
+    hidden_key = []
+    diagnostics = []
+    for sample_id in sorted(grouped):
+        pair = grouped[sample_id]
+        if set(pair) != {"A", "B"} or any(pair[v]["status"] != "valid" for v in ("A", "B")):
             continue
-        variants = ("B", "A") if int(sha256(sample_id.encode()).hexdigest(), 16) & 1 else ("A", "B")
-        first_id, first = pair[variants[0]]
-        second_id, second = pair[variants[1]]
-        blind.append({"sampleId": sample_id, "category": first["category"], "fieldRole": first["fieldRole"],
-                      "sourceText": first["sourceText"], "candidate1": first["translatedText"], "candidate2": second["translatedText"]})
-        keys.append({"sampleId": sample_id, "candidate1Variant": variants[0], "candidate2Variant": variants[1],
-                     "candidate1RequestId": first_id, "candidate2RequestId": second_id})
-        context_request_id = pair["B"][0]
-        diagnostics.append({"sampleId": sample_id, "context": public[context_request_id]["context"]})
-    write_jsonl(output / "blind-review.jsonl", blind)
-    _csv_write(output / "blind-review.csv",
-               ("sampleId", "category", "fieldRole", "sourceText", "candidate1", "candidate2",
-                "meaningAccuracy1", "meaningAccuracy2", "naturalness1", "naturalness2",
-                "terminologyConsistency1", "terminologyConsistency2", "entityConsistency1", "entityConsistency2",
-                "preferredCandidate", "bothBad", "contaminationSuspected", "notes"),
-               ({**row, "meaningAccuracy1": "", "meaningAccuracy2": "", "naturalness1": "", "naturalness2": "",
-                 "terminologyConsistency1": "", "terminologyConsistency2": "", "entityConsistency1": "", "entityConsistency2": "",
-                 "preferredCandidate": "", "bothBad": "", "contaminationSuspected": "", "notes": ""} for row in blind))
-    write_json(output / "blind-review-key.json", {"schemaVersion": "b1-02-portable-review-key/1", "pairs": keys})
+        order = blind_candidate_order(sample_id, "A", "B")
+        first, second = pair[order[0]], pair[order[1]]
+        target = public[first["requestId"]]
+        blind_rows.append({
+            "sampleId": sample_id,
+            "category": target["category"],
+            "fieldRole": target["fieldRole"],
+            "sourceText": target["sourceText"],
+            "candidate1": first["translatedText"],
+            "candidate2": second["translatedText"],
+            "meaningAccuracy1": "", "meaningAccuracy2": "",
+            "naturalness1": "", "naturalness2": "",
+            "terminologyConsistency1": "", "terminologyConsistency2": "",
+            "entityConsistency1": "", "entityConsistency2": "",
+            "preferredCandidate": "", "bothBad": "",
+            "contaminationSuspected": "", "notes": "",
+        })
+        hidden_key.append({
+            "sampleId": sample_id,
+            "candidate1Variant": order[0],
+            "candidate2Variant": order[1],
+            "candidate1RequestId": first["requestId"],
+            "candidate2RequestId": second["requestId"],
+        })
+        context_request = pair["B"]["requestId"]
+        diagnostics.append({"sampleId": sample_id, "context": public[context_request]["context"]})
+    output.mkdir(parents=True, exist_ok=True)
+    write_jsonl(output / "blind-review.jsonl", blind_rows)
+    _write_csv(output / "blind-review.csv", BLIND_FIELDS, blind_rows)
+    write_json(output / "blind-review-key.json", hidden_key)
     write_jsonl(output / "diagnostics-context.jsonl", diagnostics)
-    summary = {"requestPackageFingerprint": manifest["requestPackageFingerprint"], "reviewablePairs": len(blind),
-               "candidateOrdering": "SHA256(sampleId) parity", "variantKeySeparate": True}
-    write_json(output / "review-summary.json", summary)
-    return summary
+    return {"reviewablePairs": len(blind_rows)}
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    sub = parser.add_subparsers(dest="command", required=True)
-    export = sub.add_parser("export")
+    commands = parser.add_subparsers(dest="command", required=True)
+    export = commands.add_parser("export")
     export.add_argument("--pilot-sample", type=Path, default=Path("workspace/b1-02/phase2/pilot-sample.jsonl"))
     export.add_argument("--pilot-manifest", type=Path, default=Path("workspace/b1-02/phase2/b1-02-phase2-pilot-manifest.json"))
     export.add_argument("--output", type=Path, default=Path("workspace/b1-02/phase2a"))
-    imp = sub.add_parser("import")
-    imp.add_argument("--package", type=Path, required=True)
+    imp = commands.add_parser("import")
+    imp.add_argument("--package", type=Path, default=Path("workspace/b1-02/phase2a"))
     imp.add_argument("--responses", type=Path, required=True)
-    imp.add_argument("--output", type=Path, required=True)
-    review = sub.add_parser("build-review")
-    review.add_argument("--package", type=Path, required=True)
-    review.add_argument("--imported-results", type=Path, required=True)
-    review.add_argument("--output", type=Path, required=True)
+    imp.add_argument("--output", type=Path, default=Path("workspace/b1-02/phase2a/import"))
+    review = commands.add_parser("build-review")
+    review.add_argument("--package", type=Path, default=Path("workspace/b1-02/phase2a"))
+    review.add_argument("--imported-results", type=Path, default=Path("workspace/b1-02/phase2a/import/imported-results.jsonl"))
+    review.add_argument("--output", type=Path, default=Path("workspace/b1-02/phase2a/review"))
     args = parser.parse_args()
     if args.command == "export":
-        result = export_package(args.pilot_sample, args.pilot_manifest, args.output)
+        result = export_package(args.pilot_sample, args.pilot_manifest, args.output, require_canonical_pilot=True)
+        print(canonical({key: result[key] for key in ("sampleCount", "requestCount", "requestPackageFingerprint")}))
     elif args.command == "import":
-        result = import_responses(args.package, args.responses, args.output)
+        try:
+            print(canonical(import_responses(args.package, args.responses, args.output)))
+        except PortableResponseError as exc:
+            parser.error(str(exc))
     else:
-        result = build_review(args.package, args.imported_results, args.output)
-    print(canonical(result))
+        print(canonical(build_blind_review(args.package, args.imported_results, args.output)))
 
 
 if __name__ == "__main__":

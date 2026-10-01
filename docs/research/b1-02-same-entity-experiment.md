@@ -2,7 +2,7 @@
 
 ## Status / 狀態
 
-**Framework = READY; Real-Corpus Validation Phase 1 = ACCEPTED; Phase 2A Portable A/B Translation Package = READY; External Translation = PENDING; Provider A/B Pilot = PENDING; Human Quality Evaluation = PENDING; Production Integration = NOT STARTED.** This branch supplies an offline experiment format, real source-side measurements, and a provider-neutral exchange package. It does not show that context improves translation. / 本分支提供離線實驗框架、真實來源端量測與 provider-neutral 交換包，尚未證明脈絡會改善翻譯。
+**Framework = READY; Real-Corpus Validation Phase 1 = ACCEPTED; Provider A/B Pilot = PENDING; Human Quality Evaluation = PENDING; Production Integration = NOT STARTED.** This branch supplies an offline experiment format and real source-side measurements. It does not show that context improves translation. / 本分支提供離線實驗框架與真實來源端量測，尚未證明脈絡會改善翻譯。
 
 ## Input and policy / 輸入與政策
 
@@ -86,7 +86,9 @@ Provider pilot execution remains **PENDING** until a configured provider passes 
 
 ## Phase 2A Portable A/B Translation Package
 
-Phase 2A provides the same frozen pilot to an external human team or language model without requiring a configured provider in BG3Loc. It preserves the 40 skill/spell, 40 item, and 20 quest targets and produces 200 independent requests from the existing Phase 1 A/B prompts. It does not change the pilot sample or prompt semantics.
+Phase 2A removes the provider dependency without changing the frozen experiment. It exports the existing 100-row Phase 2 pilot (40 skill/spell, 40 item, and 20 quest) as 200 anonymous, independent translation requests. The command verifies the frozen pilot fingerprint `a9ad899d2bd2d64b4bf971af2b354aeec4e8012a97ef45bb17cb5ca2e9d783b1`; it does not resample. A fixed, versioned salt deterministically shuffles requests before assigning `req-000001` identifiers. Public rows contain no sample ID, variant label, ContentUid, or request-to-arm mapping. The renderer's rules, glossary, target text, and context-only safety instructions remain intact, while internal identity is removed from the human-readable prompt.
+
+All generated files contain real source text and stay under the ignored `workspace/b1-02/phase2a/` directory:
 
 ```powershell
 $env:PYTHONPATH = 'src'
@@ -94,24 +96,26 @@ python -m bg3loc.research.portable_translation export `
   --pilot-sample workspace/b1-02/phase2/pilot-sample.jsonl `
   --pilot-manifest workspace/b1-02/phase2/b1-02-phase2-pilot-manifest.json `
   --output workspace/b1-02/phase2a
+```
 
+Give an external translator `translation-requests.jsonl` or the UTF-8-BOM `translation-requests.csv`, together with the generated plain-language README. Keep `internal-request-map.json` private. A human team fills `translatedText` in the CSV; an external model receives `promptText`, with only its translation stored in `translatedText`. The exchange format is provider-neutral and makes no network call.
+
+Import either JSONL or CSV. Duplicate or unknown request IDs are hard errors. Partial files remain usable but are explicitly incomplete; every expected request becomes `valid`, `invalid`, or `missing`. Empty output and protected-syntax loss, addition, or corruption are invalid and are never repaired.
+
+```powershell
 python -m bg3loc.research.portable_translation import `
   --package workspace/b1-02/phase2a `
-  --responses <RESPONSES.jsonl-or.csv> `
-  --output workspace/b1-02/phase2a/imported
+  --responses '<RETURNED_JSONL_OR_CSV>' `
+  --output workspace/b1-02/phase2a/import
+```
 
+After import, build review artifacts. Only samples with valid A and B responses become pairs. Candidate order uses the existing deterministic swap; `blind-review.jsonl` and `blind-review.csv` omit context and variant identity. Keep `blind-review-key.json` private, and use `diagnostics-context.jsonl` only after primary scoring.
+
+```powershell
 python -m bg3loc.research.portable_translation build-review `
   --package workspace/b1-02/phase2a `
-  --imported-results workspace/b1-02/phase2a/imported/imported-results.jsonl `
+  --imported-results workspace/b1-02/phase2a/import/imported-results.jsonl `
   --output workspace/b1-02/phase2a/review
 ```
 
-The exporter assigns `req-000001` through `req-000200` after sorting by SHA-256 of sample identity, experiment arm, and the versioned public package salt. The public JSONL and UTF-8-with-BOM CSV contain no ContentUid, sampleId, experiment-arm label, or internal path. Requests with related fields show only their roles and English source text. Each row also carries a complete deterministic `promptText`. The external response template contains only request ID, blank translation, and blank notes.
-
-Give the translator `translation-requests.jsonl` or `translation-requests.csv`, `response-template.jsonl` if useful, and the package `README.md`. Do not give them `internal-request-map.json`. A human team fills `translatedText` and may fill notes without changing request IDs. For an external language model, send `promptText` independently and store only its returned translation.
-
-The importer accepts JSONL or CSV. It rejects duplicate and unknown IDs, reports missing IDs for partial returns, rejects empty translations, and applies the existing protected-syntax validator without changing external text. It restores sample and arm identities only in local imported results. A package is complete only when all 200 requests are received and valid.
-
-The review builder creates pairs only when both arms are valid. `blind-review.jsonl` and the UTF-8-with-BOM `blind-review.csv` contain source and anonymous Candidate 1/2 outputs without related context or arm labels. Candidate order follows SHA-256(sampleId) parity. Keep `blind-review-key.json` hidden; it maps candidates back to arms and request IDs. `diagnostics-context.jsonl` is a separate after-review aid. All real package, response, import, and review files remain under ignored `workspace/` because they contain BG3 source or external translations.
-
-Phase 2A completion means the portable exchange and validation path is ready. External Translation = PENDING; Human Quality Evaluation = PENDING; Production Integration = NOT STARTED.
+Phase 2A readiness means only that the portable A/B exchange and round trip are ready. External translation, human quality evaluation, and any production integration remain pending; this phase does not establish that context improves translation.

@@ -7,170 +7,200 @@ from pathlib import Path
 import pytest
 from jsonschema import validate
 
-from bg3loc.research.context_experiment import digest, read_rows, render_pair
+from bg3loc.protected_syntax import extract_protected_tokens
+from bg3loc.research.context_experiment import build_packs, digest, read_rows, render_pair
 from bg3loc.research.context_pilot import write_json, write_jsonl
-from bg3loc.research import portable_translation as portable
+from bg3loc.research.portable_translation import (
+    PortableResponseError,
+    audit_package,
+    build_blind_review,
+    export_package,
+    import_responses,
+)
 from bg3loc.ruleset_io import load_ruleset
+
 
 ROOT = Path(__file__).parents[1]
 FIXTURE = Path(__file__).parent / "fixtures" / "b1_02"
 
 
-def synthetic_pilot(tmp_path, monkeypatch):
-    entities = json.loads((FIXTURE / "portable_entities.json").read_text(encoding="utf-8"))
-    assert [row["entityKey"] for row in entities] == ["Skill_FrostSpark", "Item_MoonstoneCharm", "Quest_LostCourier"]
-    originals = {row["category"]: row for row in read_rows(FIXTURE / "source_rows.jsonl")}
-    rules = load_ruleset(FIXTURE / "ruleset.json")
-    counts = {"skill_spell": 40, "item": 40, "quest": 20}
-    rows = []
-    for descriptor in entities:
-        category = descriptor["category"]
-        original = originals[category]
-        for index in range(counts[category]):
-            source = descriptor["sourceText"] + (" A longer fictional sentence." * (index % 3))
-            target = {"contentUid": f"fictional-{category}-{index}", "category": category,
-                      "entityKey": f"{descriptor['entityKey']}_{index}", "fieldRole": descriptor["fieldRole"],
-                      "sourceText": source}
-            related = [{"contentUid": f"fictional-related-{category}-{index}",
-                        "fieldRole": descriptor["context"][0]["fieldRole"],
-                        "sourceText": descriptor["context"][0]["sourceText"], "truncated": False}]
-            pack = {"schemaVersion": "b1-02-context-pack/1", "target": target, "relatedFields": related,
-                    "structuralEvidence": original["structuralEvidence"]}
-            baseline, context = render_pair(pack, rules)
-            row = {"contextPack": pack, "baselinePrompt": baseline, "contextPrompt": context,
-                   "baselinePromptHash": digest(baseline), "contextPromptHash": digest(context)}
-            row["sampleId"] = digest(target)
-            rows.append(row)
-    fingerprint = digest([row["contextPack"] for row in rows])
-    monkeypatch.setattr(portable, "EXPECTED_PILOT_FINGERPRINT", fingerprint)
+def _frozen_pilot(tmp_path: Path) -> tuple[Path, Path]:
+    packs, _ = build_packs(read_rows(FIXTURE / "portable_source_rows.jsonl"))
+    ruleset = load_ruleset(FIXTURE / "ruleset.json")
+    sample = []
+    for pack in packs:
+        baseline, context = render_pair(pack, ruleset)
+        sample.append({
+            "sampleId": digest(pack["target"]),
+            "contextPack": pack,
+            "baselinePrompt": baseline,
+            "contextPrompt": context,
+            "baselinePromptHash": digest(baseline),
+            "contextPromptHash": digest(context),
+        })
     sample_path = tmp_path / "pilot-sample.jsonl"
     manifest_path = tmp_path / "pilot-manifest.json"
-    write_jsonl(sample_path, rows)
-    write_json(manifest_path, {"pilotSampleFingerprint": fingerprint})
+    write_jsonl(sample_path, sample)
+    write_json(manifest_path, {
+        "pilotSampleFingerprint": digest([row["contextPack"] for row in sample]),
+        "plannedCalls": len(sample) * 2,
+    })
     return sample_path, manifest_path
 
 
-def exported(tmp_path, monkeypatch, name="package"):
-    sample, manifest = synthetic_pilot(tmp_path, monkeypatch)
+def _package(tmp_path: Path, name: str = "package") -> Path:
+    sample, manifest = _frozen_pilot(tmp_path)
     output = tmp_path / name
-    portable.export_package(sample, manifest, output)
+    export_package(sample, manifest, output)
     return output
 
 
-def response_rows(package, count=None, corrupt_index=None):
-    requests = portable.read_jsonl(package / "translation-requests.jsonl")
-    selected = requests if count is None else requests[:count]
-    rows = []
-    for index, row in enumerate(selected):
-        text = f"虛構譯文 {row['requestId']}"
-        for token in portable.extract_protected_tokens(row["sourceText"]):
-            text += " " + token
-        if corrupt_index == index:
-            text = "損壞的虛構譯文"
-        rows.append({"requestId": row["requestId"], "translatedText": text, "translatorNotes": ""})
-    return rows
-
-
-def test_deterministic_export_schemas_anonymization_and_bom(tmp_path, monkeypatch):
-    first = exported(tmp_path, monkeypatch, "first")
-    second = exported(tmp_path, monkeypatch, "second")
-    request_schema = json.loads((ROOT / "schemas/research/portable-translation-request-v1.schema.json").read_text())
-    manifest_schema = json.loads((ROOT / "schemas/research/portable-package-manifest-v1.schema.json").read_text())
-    requests = portable.read_jsonl(first / "translation-requests.jsonl")
-    manifest = json.loads((first / "package-manifest.json").read_text())
-    validate(manifest, manifest_schema)
-    for row in requests:
-        validate(row, request_schema)
-        assert not portable.FORBIDDEN_PUBLIC_KEYS & row.keys()
-    assert len(requests) == len({row["requestId"] for row in requests}) == 200
-    assert manifest["categoryCounts"] == {"item": 40, "quest": 20, "skill_spell": 40}
-    assert manifest["requestCategoryCounts"] == {"item": 80, "quest": 40, "skill_spell": 80}
-    assert (first / "translation-requests.csv").read_bytes().startswith(b"\xef\xbb\xbf")
-    assert len(portable.read_jsonl(first / "response-template.jsonl")) == 200
-    for name in ("translation-requests.jsonl", "translation-requests.csv", "response-template.jsonl", "package-manifest.json"):
-        assert (first / name).read_bytes() == (second / name).read_bytes()
-    audit = json.loads((first / "package-audit.json").read_text())
-    assert audit["samplePairs"] == audit["completePairMappings"] == 100
-    assert audit["contentUidExposedExternally"] == audit["variantLabelsExposedExternally"] == audit["sampleIdExposedExternally"] == 0
-
-
-def test_complete_jsonl_round_trip_and_blind_review(tmp_path, monkeypatch):
-    package = exported(tmp_path, monkeypatch)
-    responses = tmp_path / "responses.jsonl"
-    rows = response_rows(package)
-    response_schema = json.loads((ROOT / "schemas/research/portable-translation-response-v1.schema.json").read_text())
+def _valid_responses(package: Path) -> list[dict[str, str]]:
+    rows = [json.loads(line) for line in (package / "translation-requests.jsonl").read_text().splitlines()]
+    result = []
     for row in rows:
+        tokens = " ".join(extract_protected_tokens(row["sourceText"]))
+        result.append({
+            "requestId": row["requestId"],
+            "translatedText": ("虛構譯文 " + tokens).strip(),
+            "translatorNotes": "",
+        })
+    return result
+
+
+def _write_responses(path: Path, rows: list[dict[str, str]]) -> None:
+    write_jsonl(path, rows)
+
+
+def test_export_is_deterministic_anonymous_and_schema_valid(tmp_path):
+    sample, pilot_manifest = _frozen_pilot(tmp_path)
+    first, second = tmp_path / "a", tmp_path / "b"
+    manifest_a = export_package(sample, pilot_manifest, first)
+    manifest_b = export_package(sample, pilot_manifest, second)
+    assert manifest_a == manifest_b
+    assert manifest_a["sampleCount"] == 6 and manifest_a["requestCount"] == 12
+    assert manifest_a["categoryCounts"] == {"skill_spell": 2, "item": 2, "quest": 2}
+    for name in ("translation-requests.jsonl", "translation-requests.csv", "response-template.jsonl"):
+        assert (first / name).read_bytes() == (second / name).read_bytes()
+    assert (first / "translation-requests.csv").read_bytes().startswith(b"\xef\xbb\xbf")
+
+    request_schema = json.loads((ROOT / "schemas/research/portable-translation-request-v1.schema.json").read_text())
+    response_schema = json.loads((ROOT / "schemas/research/portable-translation-response-v1.schema.json").read_text())
+    manifest_schema = json.loads((ROOT / "schemas/research/portable-package-manifest-v1.schema.json").read_text())
+    validate(manifest_a, manifest_schema)
+    public = [json.loads(line) for line in (first / "translation-requests.jsonl").read_text().splitlines()]
+    assert len({row["requestId"] for row in public}) == 12
+    for row in public:
+        validate(row, request_schema)
+        serialized = json.dumps(row)
+        assert "sampleId" not in serialized and "ContentUid" not in serialized
+        assert '"variant"' not in serialized and '"baseline"' not in serialized
+    internal = json.loads((first / "internal-request-map.json").read_text())
+    assert {(row["sampleId"], row["variant"]) for row in internal} == {
+        (row["sampleId"], variant)
+        for row in [json.loads(line) for line in sample.read_text().splitlines()]
+        for variant in ("A", "B")
+    }
+    assert sum(not row["context"] for row in public) == 6
+    assert sum(bool(row["context"]) for row in public) == 6
+    audit = audit_package(first)
+    assert audit["requestCount"] == audit["uniqueRequestIds"] == 12
+    assert audit["samplePairs"] == audit["completePairMappings"] == 6
+    assert audit["contentUidExposedExternally"] == 0
+    assert audit["variantLabelsExposedExternally"] == 0
+    assert audit["sampleIdExposedExternally"] == 0
+    assert json.loads((first / "package-audit.json").read_text()) == audit
+    templates = [json.loads(line) for line in (first / "response-template.jsonl").read_text().splitlines()]
+    assert len(templates) == 12
+    for row in templates:
         validate(row, response_schema)
-    write_jsonl(responses, rows)
-    imported = tmp_path / "imported"
-    summary = portable.import_responses(package, responses, imported)
-    assert summary == {"schemaVersion": "b1-02-portable-import/1",
-                       "requestPackageFingerprint": json.loads((package / "package-manifest.json").read_text())["requestPackageFingerprint"],
-                       "expected": 200, "received": 200, "valid": 200, "invalid": 0, "missing": 0,
-                       "duplicate": 0, "unknown": 0, "packageComplete": True}
-    review = tmp_path / "review"
-    result = portable.build_review(package, imported / "imported-results.jsonl", review)
-    assert result["reviewablePairs"] == 100
-    blind = portable.read_jsonl(review / "blind-review.jsonl")
-    assert len(blind) == 100
-    assert all("variant" not in row and "requestId" not in row and "context" not in row for row in blind)
-    keys = json.loads((review / "blind-review-key.json").read_text())["pairs"]
-    assert len(keys) == 100 and all({row["candidate1Variant"], row["candidate2Variant"]} == {"A", "B"} for row in keys)
-    assert (review / "blind-review.csv").read_bytes().startswith(b"\xef\xbb\xbf")
 
 
-def test_partial_csv_import_missing_empty_and_protected_syntax(tmp_path, monkeypatch):
-    package = exported(tmp_path, monkeypatch)
-    rows = response_rows(package, 4, corrupt_index=1)
-    rows[2]["translatedText"] = ""
-    path = tmp_path / "responses.csv"
-    with path.open("w", encoding="utf-8-sig", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=("requestId", "translatedText", "translatorNotes"), lineterminator="\n")
+def test_import_complete_jsonl_and_csv(tmp_path):
+    package = _package(tmp_path)
+    rows = _valid_responses(package)
+    jsonl = tmp_path / "responses.jsonl"
+    _write_responses(jsonl, rows)
+    report = import_responses(package, jsonl, tmp_path / "json-import")
+    assert report["complete"] is True and report["valid"] == 12
+
+    csv_path = tmp_path / "responses.csv"
+    with csv_path.open("w", encoding="utf-8-sig", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=("requestId", "translatedText", "translatorNotes"))
         writer.writeheader()
         writer.writerows(rows)
-    output = tmp_path / "partial"
-    summary = portable.import_responses(package, path, output)
-    assert summary["received"] == 4 and summary["valid"] == 2 and summary["invalid"] == 2 and summary["missing"] == 196
-    assert summary["packageComplete"] is False
-    results = portable.read_jsonl(output / "imported-results.jsonl")
-    assert "PROTECTED_SYNTAX_MISSING" in results[1]["errorCodes"]
-    assert results[2]["errorCodes"] == ["EMPTY_TRANSLATION", "PROTECTED_SYNTAX_MISSING"]
+    csv_report = import_responses(package, csv_path, tmp_path / "csv-import")
+    assert csv_report == report
 
 
-@pytest.mark.parametrize("mode", ("duplicate", "unknown"))
-def test_import_rejects_duplicate_and_unknown_ids(tmp_path, monkeypatch, mode):
-    package = exported(tmp_path, monkeypatch)
-    rows = response_rows(package, 2)
-    if mode == "duplicate":
+def test_import_partial_empty_and_protected_corruption(tmp_path):
+    package = _package(tmp_path)
+    rows = _valid_responses(package)
+    public = [json.loads(line) for line in (package / "translation-requests.jsonl").read_text().splitlines()]
+    protected_id = next(row["requestId"] for row in public if "{Damage}" in row["sourceText"])
+    by_id = {row["requestId"]: row for row in rows}
+    by_id[protected_id]["translatedText"] = "遺失保護 token"
+    another_id = next(request_id for request_id in by_id if request_id != protected_id)
+    by_id[another_id]["translatedText"] = ""
+    partial = [by_id[protected_id], by_id[another_id]]
+    path = tmp_path / "partial.jsonl"
+    _write_responses(path, partial)
+    report = import_responses(package, path, tmp_path / "partial-import")
+    assert report["complete"] is False
+    assert report["received"] == 2 and report["missing"] == 10 and report["invalid"] == 2
+    imported = [json.loads(line) for line in (tmp_path / "partial-import/imported-results.jsonl").read_text().splitlines()]
+    assert next(row for row in imported if row["requestId"] == protected_id)["errorCodes"] == ["PROTECTED_TOKEN_MISSING"]
+    assert next(row for row in imported if row["requestId"] == another_id)["errorCodes"] == ["EMPTY_TRANSLATION"]
+    assert sum(row["status"] == "missing" for row in imported) == 10
+
+
+@pytest.mark.parametrize("kind", ("duplicate", "unknown"))
+def test_import_rejects_duplicate_and_unknown_ids(tmp_path, kind):
+    package = _package(tmp_path)
+    rows = _valid_responses(package)
+    if kind == "duplicate":
         rows.append(dict(rows[0]))
     else:
-        rows.append({"requestId": "req-999999", "translatedText": "虛構譯文", "translatorNotes": ""})
-    path = tmp_path / "bad.jsonl"
-    write_jsonl(path, rows)
-    with pytest.raises(ValueError, match=mode):
-        portable.import_responses(package, path, tmp_path / "bad-import")
+        rows.append({"requestId": "req-999999", "translatedText": "虛構", "translatorNotes": ""})
+    path = tmp_path / f"{kind}.jsonl"
+    _write_responses(path, rows)
+    with pytest.raises(PortableResponseError):
+        import_responses(package, path, tmp_path / f"{kind}-import")
+    report = json.loads((tmp_path / f"{kind}-import/import-report.json").read_text())
+    assert report[kind] == 1
 
 
-def test_blind_pair_requires_both_valid_and_candidate_order_is_stable(tmp_path, monkeypatch):
-    package = exported(tmp_path, monkeypatch)
-    internal = json.loads((package / "internal-request-map.json").read_text())["requests"]
-    first_sample = internal[0]["sampleId"]
-    pair_ids = [row["requestId"] for row in internal if row["sampleId"] == first_sample]
-    requests = {row["requestId"]: row for row in portable.read_jsonl(package / "translation-requests.jsonl")}
-    responses = []
-    for request_id in pair_ids:
-        text = "成對虛構譯文 " + " ".join(portable.extract_protected_tokens(requests[request_id]["sourceText"]))
-        responses.append({"requestId": request_id, "translatedText": text, "translatorNotes": ""})
-    other = next(row for row in internal if row["sampleId"] != first_sample)
-    text = "單邊虛構譯文 " + " ".join(portable.extract_protected_tokens(requests[other["requestId"]]["sourceText"]))
-    responses.append({"requestId": other["requestId"], "translatedText": text, "translatorNotes": ""})
-    path = tmp_path / "pair.jsonl"
-    write_jsonl(path, responses)
-    imported = tmp_path / "pair-import"
-    portable.import_responses(package, path, imported)
-    one = tmp_path / "review-one"
-    two = tmp_path / "review-two"
-    assert portable.build_review(package, imported / "imported-results.jsonl", one)["reviewablePairs"] == 1
-    assert portable.build_review(package, imported / "imported-results.jsonl", two)["reviewablePairs"] == 1
-    for name in ("blind-review.jsonl", "blind-review.csv", "blind-review-key.json"):
-        assert (one / name).read_bytes() == (two / name).read_bytes()
+def test_blind_review_pairs_only_valid_ab_and_keeps_key_separate(tmp_path):
+    package = _package(tmp_path)
+    responses = tmp_path / "responses.jsonl"
+    _write_responses(responses, _valid_responses(package))
+    import_dir = tmp_path / "import"
+    import_responses(package, responses, import_dir)
+    imported_path = import_dir / "imported-results.jsonl"
+    imported = [json.loads(line) for line in imported_path.read_text().splitlines()]
+    excluded_sample = imported[0]["sampleId"]
+    imported[0]["status"] = "invalid"
+    imported[0]["errorCodes"] = ["SYNTHETIC_INVALID"]
+    write_jsonl(imported_path, imported)
+
+    review_dir = tmp_path / "review"
+    summary = build_blind_review(package, imported_path, review_dir)
+    assert summary["reviewablePairs"] == 5
+    blind = [json.loads(line) for line in (review_dir / "blind-review.jsonl").read_text().splitlines()]
+    assert excluded_sample not in {row["sampleId"] for row in blind}
+    for row in blind:
+        assert not ({"variant", "requestId", "context"} & row.keys())
+        assert row["candidate1"] and row["candidate2"]
+    key = json.loads((review_dir / "blind-review-key.json").read_text())
+    assert len(key) == 5 and all(set((row["candidate1Variant"], row["candidate2Variant"])) == {"A", "B"} for row in key)
+    diagnostics = [json.loads(line) for line in (review_dir / "diagnostics-context.jsonl").read_text().splitlines()]
+    assert len(diagnostics) == 5 and all(row["context"] for row in diagnostics)
+
+
+def test_blank_template_has_zero_reviewable_pairs(tmp_path):
+    package = _package(tmp_path)
+    import_dir = tmp_path / "blank-import"
+    report = import_responses(package, package / "response-template.jsonl", import_dir)
+    assert report["invalid"] == 12 and report["valid"] == 0
+    summary = build_blind_review(package, import_dir / "imported-results.jsonl", tmp_path / "blank-review")
+    assert summary["reviewablePairs"] == 0

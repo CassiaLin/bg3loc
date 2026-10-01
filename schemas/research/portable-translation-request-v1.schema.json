@@ -1,5 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CassiaLin/bg3loc/schemas/research/portable-translation-request-v1.schema.json",
   "title": "B1-02 portable translation request",
   "type": "object",
   "additionalProperties": false,
@@ -15,9 +16,13 @@
     "context": {
       "type": "array",
       "items": {
-        "type": "object", "additionalProperties": false,
+        "type": "object",
+        "additionalProperties": false,
         "required": ["fieldRole", "sourceText"],
-        "properties": {"fieldRole": {"type": "string", "minLength": 1}, "sourceText": {"type": "string", "minLength": 1}}
+        "properties": {
+          "fieldRole": {"type": "string", "minLength": 1},
+          "sourceText": {"type": "string", "minLength": 1}
+        }
       }
     },
     "promptText": {"type": "string", "minLength": 1}

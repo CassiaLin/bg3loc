@@ -1,5 +1,0 @@
-[
-  {"entityKey":"Skill_FrostSpark","category":"skill_spell","fieldRole":"Description","sourceText":"A fictional frost spark affects {PLAYER}.","context":[{"fieldRole":"DisplayName","sourceText":"Frost Spark"}]},
-  {"entityKey":"Item_MoonstoneCharm","category":"item","fieldRole":"Description","sourceText":"A fictional charm carried by {PLAYER}.","context":[{"fieldRole":"DisplayName","sourceText":"Moonstone Charm"}]},
-  {"entityKey":"Quest_LostCourier","category":"quest","fieldRole":"QuestDescription","sourceText":"Find the fictional courier for {PLAYER}.","context":[{"fieldRole":"QuestTitle","sourceText":"The Lost Courier"}]}
-]
