@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "B1-02 portable translation response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["requestId", "translatedText"],
+  "properties": {
+    "requestId": {"type": "string", "pattern": "^req-[0-9]{6}$"},
+    "translatedText": {"type": "string"},
+    "translatorNotes": {"type": "string"}
+  }
+}

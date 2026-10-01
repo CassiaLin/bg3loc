@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "B1-02 portable translation request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["requestId", "sourceLocale", "targetLocale", "category", "fieldRole", "instructions", "sourceText", "context", "promptText"],
+  "properties": {
+    "requestId": {"type": "string", "pattern": "^req-[0-9]{6}$"},
+    "sourceLocale": {"const": "English"},
+    "targetLocale": {"const": "ChineseTraditional"},
+    "category": {"enum": ["skill_spell", "item", "quest"]},
+    "fieldRole": {"type": "string", "minLength": 1},
+    "instructions": {"type": "string", "minLength": 1},
+    "sourceText": {"type": "string", "minLength": 1},
+    "context": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["fieldRole", "sourceText"],
+        "properties": {"fieldRole": {"type": "string", "minLength": 1}, "sourceText": {"type": "string", "minLength": 1}}
+      }
+    },
+    "promptText": {"type": "string", "minLength": 1}
+  }
+}

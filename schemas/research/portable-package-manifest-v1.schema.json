@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "B1-02 portable package manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "experiment", "sourceLocale", "targetLocale", "requestCount", "sampleCount", "categoryCounts", "requestCategoryCounts", "pilotSampleFingerprint", "requestPackageFingerprint", "orderingPolicy", "packageSalt", "createdWithVersion", "requestIdsFingerprint"],
+  "properties": {
+    "schemaVersion": {"const": "b1-02-portable-package/1"},
+    "experiment": {"type": "string", "minLength": 1},
+    "sourceLocale": {"const": "English"},
+    "targetLocale": {"const": "ChineseTraditional"},
+    "requestCount": {"const": 200},
+    "sampleCount": {"const": 100},
+    "categoryCounts": {
+      "type": "object", "additionalProperties": false,
+      "required": ["skill_spell", "item", "quest"],
+      "properties": {"skill_spell": {"const": 40}, "item": {"const": 40}, "quest": {"const": 20}}
+    },
+    "requestCategoryCounts": {
+      "type": "object", "additionalProperties": false,
+      "required": ["skill_spell", "item", "quest"],
+      "properties": {"skill_spell": {"const": 80}, "item": {"const": 80}, "quest": {"const": 40}}
+    },
+    "pilotSampleFingerprint": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "requestPackageFingerprint": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "orderingPolicy": {"type": "string", "minLength": 1},
+    "packageSalt": {"type": "string", "minLength": 1},
+    "createdWithVersion": {"type": "string", "minLength": 1},
+    "requestIdsFingerprint": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}
