@@ -2,7 +2,7 @@
 
 ## Status / 狀態
 
-**Framework = READY; Real-Corpus Validation Phase 1 = ACCEPTED; B1-02 Safety Validation Package = READY; Safety Review = PENDING; Production Integration = NOT STARTED.** This branch supplies an offline experiment format, real source-side measurements, and a small safety-review package. It does not establish that context improves translation or is safe to adopt. / 本分支提供離線實驗框架、真實來源端量測與小型安全審查套件；尚未證明脈絡改善翻譯或可安全採用。
+**B1-02 Framework = READY; Real-Corpus Validation = ACCEPTED; Safety Validation = PASSED; Production Integration = READY FOR DESIGN.** The completed safety review found no systematic degradation in the tested sample. Quality improvement was not demonstrated. / B1-02 框架與真實語料驗證已完成；安全驗證通過，正式整合可進入設計階段。測試樣本中未觀察到系統性劣化，但未證明翻譯品質有所改善。
 
 The current research question is: **When structural context is reliable, can it be supplied without causing systematic translation degradation?** BG3Loc aims to provide reliable and useful translation material; it does not need to prove that context significantly outperforms the baseline. / 現階段研究問題是：在結構脈絡可靠時，提供脈絡是否不會造成系統性的翻譯劣化？BG3Loc 的目標是提供可靠且有用的翻譯材料，不要求證明脈絡顯著勝過 baseline。
 
@@ -35,9 +35,9 @@ The exact full prompts and hashes are written to `b1-02-prompts.jsonl`; manifest
 - Real corpus coverage measurement = **COMPLETE** / 真實覆蓋率已測
 - Real sample generation = **COMPLETE** / 真實樣本已產生
 - Prompt character delta measurement = **COMPLETE**; token estimate = **NOT MEASURED** / 真實字元增量已測，token 估計未測
-- Safety validation package = **READY** / 安全驗證套件已備妥
-- Safety review = **PENDING** / 安全人工審查待做
-- Production integration = **NOT STARTED** / 正式整合尚未開始
+- Provider A/B pilot = **SUPERSEDED BY SAFETY VALIDATION DECISION POLICY** / Provider A/B pilot 已由安全驗證決策政策取代
+- Safety validation = **PASSED** / 安全驗證已通過
+- Production integration = **READY FOR DESIGN** / 正式整合可進入設計階段
 
 The safety review uses independent requests with identical ruleset, glossary, and protected-token policy; its only treatment is related source context. Report degradation and contamination separately for each category and field role. The earlier preference-oriented A/B infrastructure remains available for future research. / 安全審查使用相同規則、詞彙與保護 token 政策的獨立請求，唯一處理差異是同實體來源脈絡；劣化與污染需按類別及欄位角色分開回報。原有偏好導向 A/B 基礎設施保留供後續研究。
 
@@ -84,7 +84,7 @@ All outputs remain under ignored `workspace/b1-02/phase2/`: `pilot-sample.jsonl`
 
 Share **only `blind-review.json`** for the primary human review. It contains source, category, field role, protected tokens, anonymous candidates, and blank scores/preference/contamination/notes. Candidate order uses SHA-256(sampleId) parity. `review-key.json` holds the separated hidden A/B mapping; `diagnostics.json` contains source context and heuristic contamination hints and must stay outside primary blind scoring. The review JSON schema rejects extra metadata. Apply the existing [rubric](b1-02-evaluation-rubric.md): 0=bad/wrong, 1=acceptable, 2=strong; contamination also gets YES/NO. Preference is candidate1, candidate2, tie, or both_bad. Heuristic hints are not human contamination verdicts. No automatic quality scoring occurs.
 
-Provider pilot execution remains **PENDING** until a configured provider passes smoke and execution outputs, usage report, and blind review package are captured. Human Quality Evaluation = PENDING; Production Integration = NOT STARTED.
+The provider A/B pilot infrastructure remains available for future research, but its original decision role is **SUPERSEDED BY SAFETY VALIDATION DECISION POLICY**. The project criterion changed from proving that context improves translation to checking that reliable structural context does not cause systematic degradation.
 
 ## Phase 2A Portable A/B Translation Package
 
@@ -159,4 +159,27 @@ python -m bg3loc.research.safety_validation summarize `
 
 The summary reports `reviewedPairs`, `bWorseCount`, `contaminationCount`, `unclearCount`, and recurring failure patterns for each category, plus field-role breakdowns. It never assigns an adoption result automatically. Human review may conclude `SAFE TO ADOPT`, `ADOPT WITH RESTRICTIONS`, or `NOT SAFE TO ADOPT`, separately for skill/spell, item, and quest. The acceptance principle is: reliable structural context plus no meaningful systematic degradation may permit context to be supplied to translators or models. No p-value, confidence interval, win-rate threshold, or significance test is used.
 
-Until returned translations and human review exist, the only valid status is **B1-02 Safety Validation Package = READY; Safety Review = PENDING; Production Integration = NOT STARTED.**
+### Completed safety result
+
+The completed blind review covered 25 pairs: 10 skill/spell, 10 item, and 5 quest. After controlled unblinding, the aggregate result was 0 B-worse, 0 B-better, 0 context-contamination, 0 unclear, and 25 no-observable-difference pairs. The translation source produced identical outputs for baseline and context variants across all 25 pairs. No recurring failure pattern was reported.
+
+**No systematic degradation was observed in this safety sample. No quality improvement was observable either.** This result passes the B1-02 safety decision for adoption design; it does not prove that context improves quality or can never cause harm. No category-specific degradation was observed within the tested safety subset.
+
+Phase 1 coverage remains separate from safety: skill/spell coverage is 84.12%, item coverage is 58.12%, and quest coverage is 2.29%. Quest same-entity context showed no degradation where available in the tested subset, but its structural coverage remains very low. Dialogue, bark, character/world, book/lore, and tutorial context are outside B1-02; dialogue remains assigned to B1-03.
+
+The proposed production policy, pending implementation design, is:
+
+```text
+If reliable structural same-entity context exists:
+  supply it as optional read-only context.
+
+If no reliable structural context exists:
+  do not synthesize or guess context.
+
+Context is for interpretation only.
+Translate only the target source text.
+Do not add information that appears only in context.
+Do not return or translate context fields.
+```
+
+The review used a 25-pair safety sample and a single translation source, and all paired outputs were identical. The result supports proceeding to production integration design for the covered categories under the stated structural and prompt-safety constraints. It does not complete production integration.
