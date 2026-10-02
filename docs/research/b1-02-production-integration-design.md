@@ -143,3 +143,10 @@ Do not translate or return the context fields.
 - 使用已接受 safety fixture檢查 prompt parity；新增 instruction/data boundary與 adversarial source fixture。任何新增實際 provider安全評估需另行記錄，不能把25對pilot當成所有production輸出的保證。
 
 待 implementation review確認的只有工程細節：新schema/version名稱、typed classes位置、hash欄位儲存方式與受驗證的source override contract。核心 materialize層、category allowlist、source-only/read-only policy、absence fallback與禁止execution-time scan已在本設計固定。
+
+## Implementation P1 status
+
+```text
+P1 production-owned context contract = implemented
+P2 prepare integration = not started
+```
