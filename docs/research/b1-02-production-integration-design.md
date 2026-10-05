@@ -401,3 +401,108 @@ B1-03 = NOT STARTED
 ```
 
 本節取代 P1.5 停止狀態中未處理 item identity policy 的解讀；READY TO RESUME 表示可以安全續做受上述條件約束的後續工作，不表示 policy 已放寬或 P2 已開始。本輪在 audit、aggregate、decision、proposal、docs 與 regression 完成後停止。
+
+## P1.7 Item MapKey Policy Amendment
+
+2026-10-06；starting HEAD `38d719fe691f1bb53080ec4f4af24ef5fe529c95`，branch `feat/b1-02-same-entity-context`。Fetch／checkout 後確認 HEAD 與 origin 相同、working tree clean。本輪以已接受的 P1.6 CONDITIONAL 決策為 authoritative evidence，正式修訂 production-owned pure builder／source record contract；沒有重新裁定 MapKey reliability。
+
+### Policy 與 version
+
+| Contract | Amendment |
+|---|---|
+| Old item identity policy | Explicit template UUID only |
+| New item identity policy | Explicit template UUID，或 verified native GameObjects MapKey + native Type=item + no structural conflict across all retained definitions |
+| policyVersion | `b1-02-structural/1` → `b1-02-structural/2` |
+| schemaVersion | 維持 `same-entity-context/1` |
+
+`StructuralIdentityKind.TEMPLATE_MAP_KEY` 是新的 conditional identity kind。MapKey 是原生 FixedString：保留原值及大小寫，不因 UUID-like spelling 宣告 UUID origin，也不把 Name／fallback／nested UUID 當 root template identity。Existing `TEMPLATE_UUID` 行為保留，legacy source records 的新增 metadata defaults 不破壞 UUID 支援；若明確提供 item UUID origin，必須為 `UUID`，不能用 `MAP_KEY` origin 搭配 UUID kind 繞過 verification。
+
+Allowlist semantics 改變，所以 bump policy。`SameEntityContext`／target binding／related field 的 serialization shape 不變；schema 與 policy 分離。`contextFingerprint` payload 本來就包含 policyVersion，同 target、related fields、evidenceFingerprint 在 v1／v2 下仍產生不同 contextFingerprint，validator 拒絕舊 policy 的 declared-present context。
+
+### 最小 source record proof
+
+`SameEntitySourceRecord` 追加具 defaults 的四個 production-neutral scalar fields；不依賴 research parser 或攜帶 XML/payload 大物件：
+
+| Field | Meaning for MapKey |
+|---|---|
+| `identity_origin` | 必須精確為 `MAP_KEY`；由 public structural origin 提供 |
+| `template_type` | 必須精確為 `item`；來自該 GameObjects 的直接 native Type field |
+| `identity_is_native` | 必須為 True；adapter 核對該 enclosing GameObjects boundary 的直接原生 MapKey 與 entity_identity 一致 |
+| `field_is_direct` | Context occurrence 必須為 True；adapter 核對 localization field 直接屬於該 boundary |
+
+既有 `entity_type=GameObjectTemplate` 表達 definition type；`entity_scope`、`entity_identity`、`evidence_source`、`evidence_fingerprint`、`definition_fingerprint` 已表達 snapshot namespace、grouping 與 provenance。Category=item 不能替代 template_type／native proof。新 flags 嚴格接受 bool；origin／template_type 嚴格接受 string。
+
+MapKey context target／related field 只接受 P1.6 已驗證的 direct item roles：DisplayName、Description、DisplayNameAlchemy、OnUseDescription、TechnicalDescription、ShortDescription、UnknownDescription、UnknownDisplayName。Nested GameMasterSpawnSubSection 或未驗證 role 不獲准。這是新 identity 的 structural evidence gate；既有 `FIELD_PRIORITY`、maxRelatedFields=4、maxContextChars=4000、同 UID／role／重複 source 排除、runtime-token-only 排除、overflow／truncation 規則均保持。UUID、stats、quest 的既有 field selection 沒有加上 MapKey role gate。
+
+### Retained definitions 與 conflict behavior
+
+MapKey grouping 保留 category + source snapshot scope + 原始 entity_identity，scope 不應是 per-resource path。先檢查同 key 的**全部** retained definitions，再檢查 type／origin／eligibility 與 localization selection；不能因 Type=character/scenery、ineligible 或缺 localization text 而移除 competing evidence。
+
+- Same key + identical complete definition fingerprints across resources：non-conflicting duplicates，允許建立 context；resource 數大於一不是 absence reason。
+- Same key + >1 distinct complete definition fingerprints：`STRUCTURAL_CONFLICT`，不挑 winner，不使用 package priority 或文字相似度消除衝突。
+- 同 key 沒有 fingerprint 差異，但任一 retained definition 的 native origin、Type、definition boundary／provenance 無法驗證：`NO_RELIABLE_IDENTITY`。
+- 無 localization 的 retained definition 以空 UID／role／source_text、eligible=False 的 source record 保存；其完整 definition fingerprint／native type／source provenance 仍參與 conflict check，不會成為 related field。
+
+Source adapter 必須從完整 retained GameObjects universe 保留同 key 證據，包括非 item 或無 localization 的 definition；localized non-item occurrences 則保留其 non-item category，供 UID/category ambiguity 檢查。Builder 不做 I/O，不能自行找回被 upstream 丟掉的 definitions，也不能獨立認證 caller 的 native/type assertions。這是 source record contract 的明確責任，P2 尚未實作該 public adapter。
+
+### Evidence binding 與 validator
+
+Complete entity evidence digest 現在包含 identityOrigin、templateType、identityIsNative、fieldIsDirect，連同既有 whole-definition fingerprint、relative evidence source、occurrence evidence fingerprint、scope、source hash、role、locale、eligibility 一起綁定；未被選作 related field 的 retained proof 也參與 digest。缺必要 metadata／provenance 的 MapKey record 在 builder construction 前 fail closed。
+
+Serialized context 維持原形狀，沒有新增 origin、Type 或 definitionFingerprint 欄位。Validator 支援 v2 的 scoped item FixedString identity，繼續檢查 version、target UID/category/source hash、evidence/context fingerprints、related field shape 與 limits。原生 Type／MapKey proof 由 builder 先驗證並綁入 evidenceFingerprint；stateless context validator 不能從一個 digest 還原 upstream evidence，也不能認證任意偽造但自行 rehash 的 context。後續 prepare integrity 必須使用經驗證 builder output，不得把 serializer 的 syntax acceptance 當 native MapKey proof。本輪沒有新增 prompt-visible metadata 或 prompt projection。
+
+P1.5 public JSONL 本身沒有 native Type／direct placement 欄位；synthetic adapter-level tests 用 public exported rows 加上同一公開 raw definition 的直接欄位 proof 構造可靠 records。JSONL-only MapKey、缺 Type proof、錯誤 Type、nested UUID、Name/fallback 仍被拒絕；沒有變更 exporter/schema。
+
+### Synthetic validation
+
+Targeted suites `tests/test_same_entity_context.py` 與 `tests/test_public_structural_provenance.py`：`209 passed`。新增案例包含 explicit UUID compatibility、verified MapKey、非 UUID-shaped native FixedString、missing/incorrect proof、wrong Type、Name/fallback、nested UUID/category metadata、distinct fingerprints（含 wrong Type/ineligible/無 localization definition）、identical multi-resource definitions、category/snapshot/key case isolation、provenance digest binding、policy v1/v2 fingerprint difference、validator target/evidence binding。Production module 的 import boundary test 仍證明沒有 research/execution dependency。
+
+Full regression：Windows `PYTHONUTF8=1`、ignored workspace basetemp 下執行 `python -m pytest -q`，結果 `705 passed, 75 subtests passed, 0 warnings`；原 baseline 為 642 passed／75 subtests。無 production prepare、TranslationRequest、prompt/provider、DB/hash/resume 變更。
+
+### Real-corpus builder-only dry validation
+
+使用 P1.5 public definition／occurrence ledgers，將 P1.6 公開流程產生的六個 raw RootTemplates resources 重新 parse，核對所有 definition rows 與 ledgers 完全相同，再取 native Type、直接 MapKey／localization placement proof。English source 從使用者安裝的 primary `SourceLocalization` resource 新 extraction／conversion；沒有 target/reference text、auxiliary English、舊 private research input 或 English override winner，該 primary source 亦沒有 competing source texts。
+
+保留全部 GameObjects definition-only records、native item localized records，以及其他 GameObjects／stats／quest 的 public occurrence UID aliases。每個 target 使用完整 same-key group 與所有相關 UID aliases 的 closure；20 個分散 targets 與完整 public occurrence universe 直接 build 比對，結果完全相同。沒有只取 representative definition、sampling retained definitions 或修改 production builder 的 selection。
+
+| Aggregate | Count |
+|---|---:|
+| All GameObjects MapKey-origin occurrences | 13,741 |
+| Native Type=item MapKey-origin occurrences | 11,553 |
+| Conflicting native item MapKeys | 3 |
+| Eligible structural MapKey item identities（含無文字） | 9,325 |
+| Non-conflicting native item localization occurrences（含 nested） | 11,541 |
+| Non-conflicting direct localization occurrences | 11,333 |
+| Builder-eligible localization occurrences / unique target UIDs | 11,181 |
+| Builder-eligible identities with localized targets | 7,458 |
+| Target occurrences / unique target UIDs receiving related context | 7,002 |
+| Item identities receiving related context | 3,324 |
+
+Builder-eligible 指 target 通過 native/type/conflict、English source、UID/category/entity/role 等 gates，結果為 present 或 `NO_RELATED_FIELDS`；因此 single-field／無可用 related source 的 target 仍可 eligible，但不會得到 context。以上是本 dry source universe 的 eligibility，尚未使用 production classification／Hold／prepared inventory，不能宣稱 production coverage 已恢復或預測舊研究的 58.12%。
+
+| Result for 11,553 native item target occurrences | Count |
+|---|---:|
+| Present | 7,002 |
+| NO_RELATED_FIELDS | 4,179 |
+| NO_RELIABLE_IDENTITY | 222 |
+| CATEGORY_MISMATCH | 137 |
+| STRUCTURAL_CONFLICT | 10 |
+| MISSING_SOURCE | 3 |
+
+三個 conflicting keys 的 12 occurrences 全部不提供 context：10 個 direct targets 回傳 STRUCTURAL_CONFLICT，另外 2 個 nested category targets 在 field verification 階段已拒絕。Raw definition grouping 的 conflicting item keys 仍為 3，沒有為了 coverage 移除任何 competing definition。
+
+Dry script／raw source／English text／IDs／analysis outputs 只留在 ignored workspace，沒有寫 batch material、production prepare、DB 或 provider request。提交內容僅 production-owned pure contract、fictional tests 與本節；real BG3 text、mass MapKey／ContentUid、private paths、workspace artifacts、secrets 均未提交。
+
+### Limitations 與停止狀態
+
+沿用 P1.6：**cross-version stability = NOT VERIFIED**。MapKey 只在當前 source snapshot namespace 接納；更新 game/mod/resource universe 必須重建完整 proof 與 fingerprints，不跨 build 復用 context。Policy amendment 已完成，production prepare integration 尚未開始，現行 prepare 不會因此自動產生 item context。
+
+```text
+B1-02 P1.7 Item MapKey Policy Amendment = ACCEPTED
+P1 item policy = amended / b1-02-structural/2
+P2 Prepare Integration = READY TO RESUME
+P3 = NOT STARTED
+B1-03 = NOT STARTED
+```
+
+本輪止於 contract amendment、version bump、verification/conflict gates、tests、builder-only validation、docs 與指定 feature branch push；不開始 P2。
