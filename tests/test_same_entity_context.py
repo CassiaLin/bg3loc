@@ -66,7 +66,7 @@ def test_valid_structural_entity(category):
     target, related = fixture(category)
     built = context(target, (related,))
     assert built.schema_version == SCHEMA_VERSION == "same-entity-context/1"
-    assert built.policy_version == POLICY_VERSION == "b1-02-structural/1"
+    assert built.policy_version == POLICY_VERSION == "b1-02-structural/2"
     assert built.entity_type == ENTITY_TYPES[category]
     assert json.loads(built.entity_identity)["identity"] == IDENTITIES[category]
     assert built.related_fields == (SameEntityRelatedField(related.content_uid, related.field_role, related.source_text, False),)
@@ -389,3 +389,159 @@ def test_module_has_no_research_or_execution_dependency():
     tree = ast.parse(inspect.getsource(production))
     imports = [node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]
     assert [name for name in imports if name and name.startswith("bg3loc.")] == ["bg3loc.protected_syntax"]
+
+
+def map_key_fixture(identity="FictionalRootTemplateKey"):
+    return tuple(replace(row, identity_kind=Kind.TEMPLATE_MAP_KEY, entity_identity=identity,
+                         identity_origin="MAP_KEY", template_type="item",
+                         identity_is_native=True, field_is_direct=True)
+                 for row in fixture("item"))
+
+
+@pytest.mark.parametrize("identity", ["FictionalRootTemplateKey", IDENTITIES["item"]])
+def test_verified_native_item_map_key_is_allowed_and_validates(identity):
+    target, related = map_key_fixture(identity)
+    built = context(target, (related,))
+    assert json.loads(built.entity_identity)["identity"] == identity
+    validate(built, target)
+    assert built.related_fields[0].content_uid == related.content_uid
+    assert not {"identityOrigin", "templateType", "definitionFingerprint", "identityIsNative", "fieldIsDirect"} & built.to_dict().keys()
+
+
+@pytest.mark.parametrize("changes", [
+    {"identity_origin": ""}, {"identity_origin": "UUID"}, {"identity_origin": "NAME"},
+    {"identity_origin": "FALLBACK_ORDINAL"}, {"identity_origin": "FALLBACK_NODE"},
+    {"identity_origin": "UNKNOWN"}, {"identity_is_native": False},
+    {"template_type": ""}, {"template_type": "character"}, {"template_type": "scenery"},
+    {"template_type": "other"}, {"template_type": "Item"},
+    {"entity_type": "UiNode"}, {"evidence_source": ""}, {"evidence_fingerprint": ""},
+    {"definition_fingerprint": ""}, {"field_is_direct": False},
+    {"field_role": "GameMasterSpawnSubSection"}, {"field_role": "UnverifiedRole"},
+    {"entity_identity": "node#12"}, {"identity_kind": Kind.GENERIC_NODE},
+    {"identity_kind": Kind.ORDINAL_FALLBACK}, {"identity_kind": Kind.TEMPLATE_UUID},
+])
+def test_map_key_missing_or_invalid_structural_proof_is_not_reliable(changes):
+    target, related = map_key_fixture(IDENTITIES["item"])
+    assert build_same_entity_context(replace(target, **changes), (related,)).absence_reason == Reason.NO_RELIABLE_IDENTITY
+
+
+@pytest.mark.parametrize("kind", [Kind.GENERIC_NODE, Kind.ORDINAL_FALLBACK, Kind.FILE_GROUP])
+def test_item_name_and_fallback_do_not_gain_map_key_reliability(kind):
+    target, related = map_key_fixture()
+    target = replace(target, identity_kind=kind, identity_origin="NAME" if kind == Kind.GENERIC_NODE else "FALLBACK_ORDINAL")
+    assert build_same_entity_context(target, (related,)).absence_reason == Reason.NO_RELIABLE_IDENTITY
+
+
+def test_explicit_uuid_compatibility_and_origin_mismatch():
+    target, related = fixture("item")
+    assert context(target, (related,))
+    target, related = (replace(row, identity_origin="UUID", template_type="item", identity_is_native=True)
+                       for row in (target, related))
+    assert context(target, (related,))
+    assert build_same_entity_context(replace(target, identity_origin="MAP_KEY"), (related,)).absence_reason == Reason.NO_RELIABLE_IDENTITY
+
+
+@pytest.mark.parametrize("changes", [
+    {}, {"eligible": False}, {"template_type": "character"}, {"template_type": "scenery"},
+    {"identity_is_native": False}, {"identity_origin": "UNKNOWN"},
+    {"identity_kind": Kind.GENERIC_NODE}, {"entity_type": "UiNode"},
+    {"content_uid": "", "field_role": "", "source_text": "", "eligible": False},
+    {"content_uid": "fictional-target"},
+])
+def test_map_key_conflict_includes_all_retained_definitions_before_filtering(changes):
+    target, related = map_key_fixture()
+    conflict = replace(related, content_uid="fictional-competing", evidence_source="another/definition.lsx",
+                       definition_fingerprint=fingerprint({"otherWholeDefinition": True}), **{
+                           key: value for key, value in changes.items() if key != "content_uid"})
+    if "content_uid" in changes:
+        conflict = replace(conflict, content_uid=changes["content_uid"])
+    for rows in itertools.permutations((target, related, conflict)):
+        assert build_same_entity_context(target, rows).absence_reason == Reason.STRUCTURAL_CONFLICT
+
+
+@pytest.mark.parametrize("changes", [{"template_type": "character"}, {"identity_is_native": False},
+                                      {"identity_origin": "UNKNOWN"}, {"evidence_source": ""},
+                                      {"evidence_fingerprint": ""}])
+def test_map_key_same_fingerprint_does_not_override_bad_definition_proof(changes):
+    target, related = map_key_fixture()
+    retained = replace(related, content_uid="", field_role="", source_text="", eligible=False, **changes)
+    assert build_same_entity_context(target, (related, retained)).absence_reason == Reason.NO_RELIABLE_IDENTITY
+
+
+def test_map_key_identical_multi_resource_definitions_and_empty_definition_are_allowed():
+    target, related = map_key_fixture()
+    duplicate = replace(related, evidence_source="another/definition.lsx",
+                        evidence_fingerprint=fingerprint({"secondOccurrenceEvidence": True}))
+    retained = replace(target, content_uid="", field_role="", source_text="", eligible=False,
+                       field_is_direct=False, evidence_source="retained/definition.lsx",
+                       evidence_fingerprint=fingerprint({"retainedDefinitionOnly": True}))
+    expected = context(target, (related, duplicate, retained))
+    for rows in itertools.permutations((related, duplicate, retained)):
+        assert context(target, rows) == expected
+    assert len(expected.related_fields) == 1
+
+
+def test_map_key_grouping_preserves_category_scope_and_exact_native_key():
+    target, related = map_key_fixture()
+    others = [replace(related, category="quest", entity_type="Quest", identity_kind=Kind.JOURNAL_ENTITY_ID),
+              replace(related, entity_scope="other-snapshot"),
+              replace(related, entity_identity=target.entity_identity.lower())]
+    for other in others:
+        other = replace(other, content_uid="fictional-isolated")
+        assert build_same_entity_context(target, (other,)).absence_reason == Reason.NO_RELATED_FIELDS
+        assert context(target, (related, other)) == context(target, (related,))
+
+
+def test_nested_and_unverified_map_key_fields_are_excluded_without_changing_selection_limits():
+    target, related = map_key_fixture()
+    nested = replace(related, content_uid="fictional-nested", field_role="Description",
+                     source_text="Nested metadata.", field_is_direct=False)
+    category = replace(related, content_uid="fictional-category", field_role="GameMasterSpawnSubSection",
+                       source_text="An editor category.")
+    built = context(target, (related, nested, category))
+    assert built.related_fields == context(target, (related,)).related_fields
+    assert MAX_RELATED_FIELDS == 4 and MAX_CONTEXT_CHARS == 4000
+    assert FIELD_PRIORITY["item"] == ("DisplayName", "Description", "Tooltip")
+    assert build_same_entity_context(target, (nested, category)).absence_reason == Reason.NO_RELATED_FIELDS
+
+
+def test_map_key_evidence_digest_binds_structural_proof_and_nonselected_provenance():
+    target, related = map_key_fixture()
+    first = context(target, (related,))
+    retained = replace(target, content_uid="", field_role="", source_text="", eligible=False, field_is_direct=False)
+    second = context(target, (related, retained))
+    third = context(target, (related, replace(retained, field_is_direct=True)))
+    assert first.related_fields == second.related_fields == third.related_fields
+    assert len({built.evidence_fingerprint for built in (first, second, third)}) == 3
+    payload = production._evidence_payload(target)
+    assert (payload["identityOrigin"], payload["templateType"], payload["identityIsNative"], payload["fieldIsDirect"]) == ("MAP_KEY", "item", True, True)
+
+
+def test_policy_version_changes_context_fingerprint_with_same_fields_and_binding():
+    target, related = map_key_fixture()
+    current = context(target, (related,))
+    previous = rehash(replace(current, policy_version="b1-02-structural/1"))
+    assert previous.related_fields == current.related_fields
+    assert previous.target_binding == current.target_binding
+    assert previous.evidence_fingerprint == current.evidence_fingerprint
+    assert previous.context_fingerprint != current.context_fingerprint
+    with pytest.raises(SameEntityContextValidationError, match="policy version"):
+        validate(previous, target)
+
+
+@pytest.mark.parametrize("changes", [{"evidence_fingerprint": ""}, {"entity_identity": "{}"},
+                                      {"entity_identity": '{"scope":"","identity":"FictionalRootTemplateKey"}'},
+                                      {"entity_identity": '{"scope":"default","identity":"node#12"}'}])
+def test_map_key_present_context_requires_scoped_identity_and_valid_evidence_digest(changes):
+    target, related = map_key_fixture()
+    invalid = rehash(replace(context(target, (related,)), **changes))
+    with pytest.raises(SameEntityContextValidationError):
+        validate(invalid, target)
+
+
+@pytest.mark.parametrize("changes", [{"identity_origin": []}, {"template_type": []},
+                                      {"identity_is_native": "true"}, {"field_is_direct": 1}])
+def test_new_provenance_metadata_is_typed(changes):
+    target, _ = map_key_fixture()
+    with pytest.raises(ValueError):
+        replace(target, **changes)

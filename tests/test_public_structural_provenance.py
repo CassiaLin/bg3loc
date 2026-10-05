@@ -225,6 +225,75 @@ def test_public_origin_does_not_relax_p1_reliability(kind, field, category):
     assert build_same_entity_context(records[0], records).absence_reason == ContextAbsenceReason.NO_RELIABLE_IDENTITY
 
 
+def adapt_verified_map_key(row, definition):
+    """Test-only adapter: JSONL alone cannot prove native Type/direct placement."""
+    node = definition.payload["node"]
+    fields = node["fields"]
+    types = fields.get("Type", [])
+    keys = fields.get("MapKey", [])
+    direct = any(field["attributes"].get("handle") == row["contentUid"]
+                 for field in fields.get(row["fieldName"], []))
+    native = (node["attributes"].get("id") == "GameObjects" and len(keys) == 1
+              and keys[0]["attributes"].get("value") == row["entityIdentity"])
+    return replace(adapt_public(row, "item"), identity_kind=Kind.TEMPLATE_MAP_KEY,
+                   identity_origin=row["identityOrigin"], identity_is_native=native,
+                   template_type=types[0]["attributes"].get("value", "") if len(types) == 1 else "",
+                   field_is_direct=direct)
+
+
+@pytest.mark.parametrize("template_type,allowed", [("item", True), ("character", False), ("scenery", False), ("", False)])
+def test_public_map_key_output_requires_raw_native_type_proof(template_type, allowed, tmp_path):
+    source = xml(identity_field="MapKey", identity="FictionalRootKey",
+                 extra=f'<attribute id="Type" type="FixedString" value="{template_type}"/>')
+    definition = parse_structural_xml(source, resource_path="Public/Fixture/RootTemplates/root.lsx", package="Fixture.pak")[0]
+    write_structural_provenance(tmp_path, [definition])
+    rows = read_rows(tmp_path / "structural-occurrences.jsonl")
+    assert all(row["identityOrigin"] == "MAP_KEY" for row in rows)
+    assert all("templateType" not in row for row in rows)
+    records = [adapt_verified_map_key(row, definition) for row in rows]
+    target = next(row for row in records if row.content_uid == UID)
+    result = build_same_entity_context(target, records)
+    if allowed:
+        assert result.context is not None
+    else:
+        assert result.absence_reason == ContextAbsenceReason.NO_RELIABLE_IDENTITY
+
+
+def test_nested_uuid_and_category_do_not_replace_public_root_map_key(tmp_path):
+    nested_uuid = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"  # fictional child UUID
+    source = xml(identity_field="MapKey", identity=UUID, extra=(
+        '<attribute id="Type" type="FixedString" value="item"/>'
+        f'<children><node id="Item"><attribute id="UUID" value="{nested_uuid}"/></node>'
+        f'<node id="GameMaster"><attribute id="GameMasterSpawnSubSection" type="TranslatedString" '
+        'handle="haaaaaaaagbbbbgccccgddddgeeeeeeeeeeee"/></node></children>'))
+    definition = parse_structural_xml(source, resource_path="Public/Fixture/RootTemplates/root.lsx", package="Fixture.pak")[0]
+    write_structural_provenance(tmp_path, [definition])
+    rows = read_rows(tmp_path / "structural-occurrences.jsonl")
+    assert definition.identity_origin == Origin.MAP_KEY
+    assert definition.entity_identity == UUID != nested_uuid
+    records = [adapt_verified_map_key(row, definition) for row in rows]
+    target = next(row for row in records if row.content_uid == UID)
+    built = build_same_entity_context(target, records).context
+    assert built is not None and {field.field_role for field in built.related_fields} == {"Description"}
+    assert all(row.identity_kind == Kind.TEMPLATE_MAP_KEY for row in records)
+    assert build_same_entity_context(replace(target, identity_kind=Kind.TEMPLATE_UUID), records).absence_reason == ContextAbsenceReason.NO_RELIABLE_IDENTITY
+
+
+def test_public_map_key_conflict_retains_definition_without_localization(tmp_path):
+    source = xml(identity_field="MapKey", identity="FictionalRootKey",
+                 extra='<attribute id="Type" value="item"/>')
+    first = parse_structural_xml(source, resource_path="Public/Fixture/RootTemplates/first.lsx", package="Fixture.pak")[0]
+    second = parse_structural_xml('<save><node id="GameObjects"><attribute id="MapKey" value="FictionalRootKey"/>'
+                                  '<attribute id="Type" value="character"/></node></save>',
+                                  resource_path="Public/Fixture/RootTemplates/second.lsx", package="Fixture.pak")[0]
+    write_structural_provenance(tmp_path, [first, second])
+    records = [adapt_verified_map_key(row, first) for row in read_rows(tmp_path / "structural-occurrences.jsonl")]
+    retained_row = {**second.to_dict(), "contentUid": "", "fieldName": "", "fieldRole": ""}
+    records.append(replace(adapt_verified_map_key(retained_row, second), source_text="", eligible=False))
+    target = next(row for row in records if row.content_uid == UID)
+    assert build_same_entity_context(target, records).absence_reason == ContextAbsenceReason.STRUCTURAL_CONFLICT
+
+
 @pytest.mark.parametrize("bad", ["C:/fictional/private.lsx", "/Users/fictional/private.lsx",
                                  "../private.lsx", "\\\\server\\private.lsx"])
 def test_absolute_and_private_source_paths_rejected(bad):
