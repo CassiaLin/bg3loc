@@ -21,7 +21,7 @@ from bg3loc.protected_syntax import extract_protected_tokens
 
 
 SCHEMA_VERSION = "same-entity-context/1"
-POLICY_VERSION = "b1-02-structural/1"
+POLICY_VERSION = "b1-02-structural/2"
 MAX_RELATED_FIELDS = 4
 MAX_CONTEXT_CHARS = 4000
 CATEGORIES = frozenset({"skill_spell", "item", "quest"})
@@ -38,6 +38,7 @@ ENTITY_TYPES = MappingProxyType({
 class StructuralIdentityKind(str, Enum):
     STATS_ENTRY_NAME = "stats-entry-name"
     TEMPLATE_UUID = "template-uuid"
+    TEMPLATE_MAP_KEY = "template-map-key"
     JOURNAL_ENTITY_ID = "journal-entity-id"
     # Explicit negative kinds make adapter fallbacks auditable.
     STATS_USING_PARENT = "stats-using-parent"
@@ -46,10 +47,17 @@ class StructuralIdentityKind(str, Enum):
     FILE_GROUP = "file-group"
 
 
+# Default/legacy kinds; item also accepts the conditional TEMPLATE_MAP_KEY gate.
 IDENTITY_KINDS = MappingProxyType({
     "skill_spell": StructuralIdentityKind.STATS_ENTRY_NAME,
     "item": StructuralIdentityKind.TEMPLATE_UUID,
     "quest": StructuralIdentityKind.JOURNAL_ENTITY_ID,
+})
+
+# MapKey eligibility is additional structural proof, not a selection priority.
+_MAP_KEY_ITEM_ROLES = frozenset({
+    "displayname", "description", "displaynamealchemy", "onusedescription",
+    "technicaldescription", "shortdescription", "unknowndescription", "unknowndisplayname",
 })
 
 
@@ -95,6 +103,12 @@ class SameEntitySourceRecord:
     with a UUID-looking name must still declare GENERIC_NODE and is rejected.
     The adapter must retain all definitions; this builder cannot detect omitted
     evidence or independently authenticate an upstream structural assertion.
+    For TEMPLATE_MAP_KEY, identity_origin must be MAP_KEY, identity_is_native
+    must attest a direct identity on the GameObjectTemplate boundary, and
+    template_type must come from that boundary's native Type field. entity_type
+    declares the definition type. field_is_direct attests occurrence ownership.
+    Retain definitions without usable localization as records with empty UID,
+    role and text and eligible=False; their provenance still participates.
     """
     content_uid: str
     category: str
@@ -109,15 +123,21 @@ class SameEntitySourceRecord:
     entity_scope: str = "default"
     source_locale: str = "English"
     eligible: bool = True
+    identity_origin: str = ""
+    template_type: str = ""
+    identity_is_native: bool = False
+    field_is_direct: bool = False
 
     def __post_init__(self) -> None:
         for name in ("content_uid", "category", "entity_type", "entity_identity", "field_role",
                      "source_text", "evidence_source", "evidence_fingerprint", "definition_fingerprint",
-                     "entity_scope", "source_locale"):
+                     "entity_scope", "source_locale", "identity_origin", "template_type"):
             if not isinstance(getattr(self, name), str):
                 raise ValueError(f"{name} must be a string")
-        if not isinstance(self.identity_kind, StructuralIdentityKind) or type(self.eligible) is not bool:
-            raise ValueError("identity_kind must be StructuralIdentityKind; eligible must be boolean")
+        if (not isinstance(self.identity_kind, StructuralIdentityKind)
+                or any(type(getattr(self, name)) is not bool
+                       for name in ("eligible", "identity_is_native", "field_is_direct"))):
+            raise ValueError("identity_kind must be StructuralIdentityKind; evidence flags must be boolean")
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,15 +233,28 @@ def _relative_identity(value: str) -> str | None:
     return str(PurePosixPath(normalized))
 
 
+def _identity_text(value: str) -> bool:
+    return bool(value and value == value.strip()
+                and not any(char in value for char in "#:/\\"))
+
+
 def _identity(record: SameEntitySourceRecord) -> str | None:
     value = record.entity_identity
+    map_key = record.category == "item" and record.identity_kind == StructuralIdentityKind.TEMPLATE_MAP_KEY
     if (record.entity_type != ENTITY_TYPES.get(record.category)
-            or record.identity_kind != IDENTITY_KINDS.get(record.category)
-            or not isinstance(value, str) or not value.strip() or value != value.strip()
-            or "#" in value or ":" in value or "/" in value or "\\" in value
+            or (not map_key and record.identity_kind != IDENTITY_KINDS.get(record.category))
+            or not _identity_text(value)
             or not _relative_identity(record.entity_scope)):
         return None
     if record.category == "item":
+        if map_key:
+            if (record.identity_origin != "MAP_KEY" or not record.identity_is_native
+                    or record.template_type != "item"):
+                return None
+            # Native FixedString identity: no UUID inference or case folding.
+            return value
+        if record.identity_origin not in {"", "UUID"}:
+            return None
         try:
             parsed = UUID(value)
         except ValueError:
@@ -240,6 +273,18 @@ def _reliable(record: SameEntitySourceRecord) -> bool:
 
 def _entity_key(record: SameEntitySourceRecord) -> tuple[str, str, str | None]:
     return record.category, _relative_identity(record.entity_scope) or "", _identity(record)
+
+
+def _map_key_group_member(record: SameEntitySourceRecord, target: SameEntitySourceRecord) -> bool:
+    # Deliberately do not filter by type, origin, eligibility or usable fields.
+    # Competing retained definitions must not disappear through reliability gates.
+    return (record.category == target.category and record.entity_identity == target.entity_identity
+            and _relative_identity(record.entity_scope) == _relative_identity(target.entity_scope))
+
+
+def _field_verified(record: SameEntitySourceRecord) -> bool:
+    return (record.identity_kind != StructuralIdentityKind.TEMPLATE_MAP_KEY
+            or (record.field_is_direct and record.field_role.strip().casefold() in _MAP_KEY_ITEM_ROLES))
 
 
 def _usable(text: str) -> bool:
@@ -268,6 +313,8 @@ def _evidence_payload(record: SameEntitySourceRecord) -> dict[str, object]:
         "evidenceSource": _relative_identity(record.evidence_source),
         "evidenceFingerprint": record.evidence_fingerprint,
         "definitionFingerprint": record.definition_fingerprint,
+        "identityOrigin": record.identity_origin, "templateType": record.template_type,
+        "identityIsNative": record.identity_is_native, "fieldIsDirect": record.field_is_direct,
     }
 
 
@@ -285,15 +332,24 @@ def build_same_entity_context(
 
     if target.category not in CATEGORIES:
         return absent(ContextAbsenceReason.UNSUPPORTED_CATEGORY)
-    if not _reliable(target) or not target.content_uid:
+    if not _reliable(target) or not target.content_uid or not _field_verified(target):
         return absent(ContextAbsenceReason.NO_RELIABLE_IDENTITY)
     universe = tuple(records) + (target,)
+    map_key = target.identity_kind == StructuralIdentityKind.TEMPLATE_MAP_KEY
+    group = tuple(row for row in universe if
+                  (_map_key_group_member(row, target) if map_key else _entity_key(row) == _entity_key(target)))
+    if map_key:
+        if len({row.definition_fingerprint for row in group}) != 1:
+            return absent(ContextAbsenceReason.STRUCTURAL_CONFLICT)
+        if any(not _reliable(row) or row.identity_kind != StructuralIdentityKind.TEMPLATE_MAP_KEY for row in group):
+            return absent(ContextAbsenceReason.NO_RELIABLE_IDENTITY)
     occurrences = tuple(row for row in universe if row.content_uid == target.content_uid)
     if any(row.category != target.category for row in occurrences):
         return absent(ContextAbsenceReason.CATEGORY_MISMATCH)
     if any(not row.eligible for row in occurrences):
         return absent(ContextAbsenceReason.HOLD_OR_INELIGIBLE)
-    if any(not _reliable(row) or _entity_key(row) != _entity_key(target) for row in occurrences):
+    if any(not _reliable(row) or not _field_verified(row)
+           or _entity_key(row) != _entity_key(target) for row in occurrences):
         return absent(ContextAbsenceReason.NO_RELIABLE_IDENTITY)
     if not target.field_role.strip() or len({row.field_role.strip().casefold() for row in occurrences}) != 1:
         return absent(ContextAbsenceReason.AMBIGUOUS_FIELD_ROLE)
@@ -302,7 +358,6 @@ def build_same_entity_context(
     if any(row.source_text != target.source_text or row.source_locale != target.source_locale for row in occurrences):
         return absent(ContextAbsenceReason.STRUCTURAL_CONFLICT)
 
-    group = tuple(row for row in universe if _entity_key(row) == _entity_key(target))
     # Check all definitions, including evidence later excluded from selection.
     if len({row.definition_fingerprint for row in group}) != 1:
         return absent(ContextAbsenceReason.STRUCTURAL_CONFLICT)
@@ -313,11 +368,12 @@ def build_same_entity_context(
         return absent(ContextAbsenceReason.STRUCTURAL_CONFLICT)
     candidates = []
     for row in group:
-        if not (_reliable(row) and row.eligible and row.field_role.strip()
+        if not (_reliable(row) and _field_verified(row) and row.eligible and row.field_role.strip()
                 and row.source_locale == target.source_locale):
             continue
         uid_occurrences = tuple(other for other in universe if other.content_uid == row.content_uid)
-        if any(not other.eligible or not _reliable(other) or _entity_key(other) != _entity_key(target)
+        if any(not other.eligible or not _reliable(other) or not _field_verified(other)
+               or _entity_key(other) != _entity_key(target)
                or other.source_locale != target.source_locale or other.source_text != row.source_text
                or other.field_role.strip().casefold() != row.field_role.strip().casefold()
                for other in uid_occurrences):
@@ -371,7 +427,10 @@ def validate_same_entity_context(
     """Validate present context against the caller's exact target; None is normal.
 
     Fingerprints bind declared provenance, not external evidence authenticity.
-    Evidence reliability itself is established by the source adapter/builder.
+    Evidence reliability itself is established by the source adapter/builder,
+    including native MapKey/Type/direct-field proof bound in evidenceFingerprint.
+    The serialized context intentionally contains no origin/type proof; this
+    validator cannot authenticate an arbitrary digest against omitted evidence.
     """
     if context is None:
         return
@@ -401,7 +460,13 @@ def validate_same_entity_context(
     probe = SameEntitySourceRecord(content_uid, category, context.entity_type, identity["identity"],
                                    context.target_field_role, source_text, IDENTITY_KINDS[category],
                                    "probe", "", "", entity_scope=identity["scope"])
-    require(_identity(probe) is not None, "unreliable entity identity")
+    if category == "item":
+        # Policy v2 also accepts verified native FixedStrings. Their proof is
+        # checked before construction and bound in the complete evidence digest.
+        require(_identity_text(identity["identity"]) and bool(_relative_identity(identity["scope"])),
+                "invalid item entity identity")
+    else:
+        require(_identity(probe) is not None, "unreliable entity identity")
     require(_is_hash(context.evidence_fingerprint), "invalid evidence fingerprint")
     require(isinstance(context.related_fields, tuple) and 1 <= len(context.related_fields) <= MAX_RELATED_FIELDS,
             "related fields must contain 1..4 immutable entries")
