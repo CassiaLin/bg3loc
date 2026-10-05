@@ -506,3 +506,104 @@ B1-03 = NOT STARTED
 ```
 
 本輪止於 contract amendment、version bump、verification/conflict gates、tests、builder-only validation、docs 與指定 feature branch push；不開始 P2。
+
+## P2 actual prepare integration
+
+P2 新增 `production_context.py`，由 production prepare 擁有 public evidence adapter。`production prepare --structural-provenance <public-export-directory>` 啟用此流程；不帶此選項的 prepare 保持 manifest 1.1、既有 material 與 execution input hash。
+
+正式插入點是 classification／batch material 建立與 ruleset category 檢查之後、`run_init` 之前。Adapter 一次讀取 normalized English source snapshot、public definitions／occurrences、production classification 與 UI-skill Hold inventory，建立完整 source universe，再用 entity 與 UID alias 索引取得 P1 builder 所需的完整 closure。它不依 batch partition 建立 universe；definition-only、wrong Type、ineligible、缺 English occurrence 及 competing fingerprint 證據均保留。Localized non-item occurrences 保留 non-item category，避免 shared UID 被當成 item 證據。
+
+Adapter 不 import research CLI 或 execution/provider/request modules。既有 prepare 的 classification／batching 呼叫保持原狀；新增 context adapter 只消費 public output schema。skill_spell 採 direct stats ENTRY_NAME 與既有四種 entry type；item 採 explicit UUID 或 P1.7 native MapKey／Type=item／direct approved field／完整 definition conflict gate；quest 採 public native ENTITY_ID。Name、fallback、ordinal、nested UUID、generic node 不建立可靠 identity。Missing related English source 是正常 absence，沒有以 translation 或 provider output 補值。
+
+### Public proof additions and reconstruction
+
+P1.5 public export 的 GameObjectTemplate definition／occurrence rows 新增 additive `templateType`、`identityIsNative`，occurrence 再新增 `fieldIsDirect`。Parser 從完整 GameObjects boundary 的 direct Type、native identity 與 direct localization field 取得證據；nested Type／UUID、Key alias、competing Type fields 不偽造 native MapKey proof。Whole-definition fingerprint projection 與 public schema version 維持原 contract；new metadata 參與 P2 semantic input／evidence digest。舊 public rows 仍符合 schema，但缺 MapKey proof 時正常無 context。
+
+可由使用者的遊戲安裝完整重建，以下 `$publicOutput` 應是 fresh、ignored workspace 的 absolute output directory；backend 沿用 public workflow 配置：
+
+```powershell
+bg3loc scan --game-dir <game-install> --output "$publicOutput/scan"
+bg3loc extract --scan "$publicOutput/scan/scan-manifest.json" --source English --target ChineseTraditional --output "$publicOutput/extract"
+bg3loc research scan --game-dir <game-install> --output "$publicOutput/research-scan.json"
+bg3loc research map --scan "$publicOutput/research-scan.json" --output-dir "$publicOutput/research"
+bg3loc research export-provenance --scan "$publicOutput/research-scan.json" --output-dir "$publicOutput/provenance"
+bg3loc production prepare --extract "$publicOutput/extract/extract-manifest.json" --source "$publicOutput/extract/normalized/English.jsonl" --research-mappings "$publicOutput/research/research-mappings.jsonl" --ruleset docs/lstp/ruleset-example.json --structural-provenance "$publicOutput/provenance" --output <fresh-production-workspace>
+```
+
+English source 來自 public scan／extract；skill、item、quest provenance 均來自 fresh public research scan／export-provenance。Classification 與 Hold ledger 由 fresh public research map 建立；沒有 pilot、manual retained artifacts、private UID／MapKey list 或 historical package input。
+
+### Inline material and manifest contract
+
+Present row 寫入 optional `sameEntityContext`，直接使用 P1 `to_dict()`，schema `same-entity-context/1`、policy `b1-02-structural/2`。包含 target binding、target role、entity type／scoped identity、evidence fingerprint、related fields 與 context fingerprint。每筆 present context 都先經 authoritative validation，再從 serialized shape 驗證；全部 target 通過後才修改 material，之後才初始化 DB。Builder present-but-invalid 是 hard failure。Absent row 保留 baseline bytes，不寫 null／empty object；declared-present null、empty shape 或 invalid binding／text／fingerprint 是 error。
+
+Context-enabled manifest 為 **1.2**；1.0／1.1 compatibility 與 unknown-version rejection 保留。新 `sameEntityContext` section 記錄 schema／policy／adapter／builder versions、4 related fields／4,000 chars limits、allowed categories、present count、aggregate context fingerprint、summary relative path／SHA／fingerprint、source／definition／occurrence／classification semantic digests 與原始 SHA256，以及 semantic Hold digest。新 metadata 無 absolute input paths。既有 `inputs` section 保持原 provenance references；workspace preflight 不要求它們仍可存取。
+
+`sameEntityContextMaterialFingerprint` 是 canonical target UID → context fingerprint 或 `absent` sentinel 的 digest；artifact 只公開 aggregate digest，不輸出 mapping／UID list。`context-materialization-summary.json` 只包含 aggregates、contract 與 fingerprints。Semantic input digests 對 row order 與 exact duplicate provenance invariant；原始 SHA256 另封存 byte provenance，不進 deterministic summary fingerprint。Existing material bytes fingerprint 自然包含 inline context。
+
+Preflight 只讀 prepared batch material、sealed summary／manifest、ruleset snapshot 與 DB inventory。它驗證 inline P1 shape／binding／limits／fingerprint、aggregate present count／context digest、summary bytes／semantic fingerprint／contract；不重新掃描 source universe、archive 或 research inputs。Context 尚未進入 TranslationRequest、prompt 或 provider；execution input_hash、resume identity、attempt semantics 保持原狀，P4 binding 尚未開始。
+
+### Coverage interpretation and verification
+
+Production coverage denominator 是 prepared classificationStatus=classified、category 為 skill_spell／item／quest、有非空白 English source 且不在 public UI-skill Hold inventory 的 targets。Structural identity／conflict／role gates 決定這些 eligible targets 是否收到 context，失敗計入 withoutContext；Hold rows 的既有 execution inventory 不改動，但不進 coverage denominator。另報 preparedTargets 與各類 absence reasons，避免把 builder-only eligibility 當 production eligibility。
+
+Item sanity 的 nativeTypeItemTargets 計 production-eligible UID 的 native Type=item occurrence；nativeMapKeyProofTargets 另要求 native origin 與 direct target field；verifiedMapKeyTargets 再要求完整同 key definitions 同 fingerprint、全部 native Type=item proof。Structural-conflict excluded count 只計 builder 回傳該 reason 的 native MapKey targets。Verified identity 仍須通過 UID alias／category／role／related source gates才能收到 context。
+
+Synthetic fixtures 全為 fictional data。驗證可靠 stats、UUID、MapKey identical multi-resource、native quest；wrong Type、Name／ordinal、unsupported category、single field、Hold、missing source、no-localization wrong-Type conflict、quest conflict、role ambiguity、cross-category UID alias；另驗證 repeat／input shuffle／batch split、absent byte equivalence、legacy input hash／target inventory equality、prepared-input isolation、reader/completion inventory。Corruption tests 改 context fingerprint、target binding、related source、null、empty object、刪除 context，並重算外層 material fingerprint，仍必須在 preflight 拒絕；invalid builder result 在任何 inline write／run_init 前失敗。
+
+### Fresh real-corpus prepare-only result
+
+遊戲 build `25605617`、version `4.1.1.7631656`。本輪 fresh public scan 發現 41,502 research entries；scan／extract 取得 232,878 English source rows；research map 產生 65,800 mappings 與完整 public story／UI-skill outputs，generationInputs 宣告 historical workbooks／CSV／UID lists 均未使用。Fresh provenance export 為 49,860 definitions、32,660 occurrences，其中 native Type=item definitions 9,331。全程未呼叫 LLM provider。
+
+實際 production prepare 建立 291 batches、218,272 target execution items，14,606 source rows 保持 unresolved。18,071 targets 收到 inline context。下表數字直接取 fresh prepare summary；item 的 7,002 是這次 production prepare 的實際結果，採 production denominator 13,614。
+
+| Category | Prepared targets | Eligible targets | With context | Without context | Coverage |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| skill_spell | 14,558 | 14,495 | 10,977 | 3,518 | 75.729562% |
+| item | 13,615 | 13,614 | 7,002 | 6,612 | 51.432349% |
+| quest | 5,458 | 5,458 | 92 | 5,366 | 1.685599% |
+
+63 skill_spell 與 1 item prepared targets 因 public Hold 不進 context eligibility denominator；既有 target inventory 保持原狀。
+
+| Absence reason | skill_spell | item | quest | All prepared targets |
+| --- | ---: | ---: | ---: | ---: |
+| NO_RELATED_FIELDS | 2,059 | 4,179 | 3,112 | 9,350 |
+| NO_RELIABLE_IDENTITY | 1,115 | 2,290 | 1,349 | 4,754 |
+| STRUCTURAL_CONFLICT | 344 | 6 | 905 | 1,255 |
+| CATEGORY_MISMATCH | 0 | 137 | 0 | 137 |
+| HOLD_OR_INELIGIBLE | 63 | 1 | 0 | 64 |
+| UNSUPPORTED_CATEGORY | 0 | 0 | 0 | 184,641 |
+
+Quest 的 905 conflict targets 全部無 context；未選 winner 或放寬 definition gate。Item sanity：native Type=item targets **11,540**；native direct MapKey proof targets **11,330**；通過完整 definition/type proof 的 verified MapKey targets **11,324**；structural-conflict excluded targets **6**；實際收到 related context targets **7,002**。此處各數是 production-eligible UID counts，並非 raw definition／physical occurrence counts。
+
+Operational stats：mean related fields `1.118864478999502`、max `4`、truncated context rows `0`、mean related context chars `78.09999446627192`、nearest-rank p95 chars `245`。Truncated rows 以 authoritative relatedFields.truncated flag 計算。
+
+| Sealed aggregate / semantic input | SHA256 fingerprint |
+| --- | --- |
+| sameEntityContextMaterialFingerprint | `90a05d5e24b1855eef833ff47b79079a669b5843f032b0f715f2112f487c6729` |
+| Summary fingerprint | `316c6706f5e2b9c480b2f3ba7fc3db11c8f64a72c6ce38f8fdcd57a99be11a82` |
+| Summary bytes SHA256 | `0103bd39d3bfee5f6442593fcc4c99a89f6818acd380c5c13e08430cc08ca338` |
+| Normalized English corpus | `d1607fd5dec03eab5bb385df565b82379f05eb1e37b744b4e6f609fb9c5b6fa6` |
+| Public definitions | `f835cdcee716d69597f50ee7e3234580dc75bcaf700ea92d20491c98047f1226` |
+| Public occurrences | `fc2edf1e6da7ebf50592968974702cb6816f8e23e29dec82bb382061b1b88be7` |
+| Production classification | `d10a3c34382414a1eaa06b89db859883c1f9244f28fa966a61a07b19727559b3` |
+| Public Hold inventory | `aee482edd832e2073f00ecdaf64646d57700add06783a1c82f93be7c00f9e025` |
+
+原始 input bytes SHA256 亦封存在 local manifest：normalized source `3aec0b9691045358803e7313f744dc5b10601c87a1b4d19e78429d0d215d076b`；definitions `6e52d0eb244212b961648e5d4d6062b23e201447fadef667f34ba0bd1b8762f2`；occurrences `c4ef116d4ae713e6857d4db4e20e4a6e876b20e69600d2b4fd1a7329e199bed6`；classification `a4f2b8a0b7495a78b3ed1bfed6de1aded037dc7d8f45f88ce103b2196d4332a5`。
+
+### Isolation, determinism and final verification
+
+真實 prepare 完成後，整個 fresh public input directory 已移走，原 source／extract／mapping／provenance／UI／story input paths 均不再可用。隔離檢查再以 file-open guard 禁止 prepared workspace 之外的讀取，並讓 game backend resolver 不可用。Preflight、全部 18,071 inline contexts、既有 BatchMaterialResolver、execution inventory 與 completion view 都通過；從 prepared material／ruleset 重新計算全部 218,272 execution input hashes，逐筆與既有 DB 相同。
+
+Execution target inventory 與 completion inventory 都是 218,272；related UIDs outside target inventory `0`；run／attempt counts 都是 `0`；completion 為 WAITING_TRANSLATION `218,272`，MERGE_READY／BLOCKED／WAITING_RETRY／WAITING_REVIEW 都是 `0`。Related UID 沒有增加 execution items、claims、completion inventory 或 rebuild-ready rows。
+
+Synthetic repeat prepare 的 material bytes、summary 與 context material fingerprint identical；shuffled source／public provenance rows 的 per-target contexts、完整 summary／fingerprints identical；不同 batch size 並觸發 oversize group split 後，per-target contexts、summary／aggregate fingerprints identical。Legacy absence bytes 與 target input hashes 也相同。
+
+Targeted suites：`248 passed`。Full `python -m pytest -q`（Windows PYTHONUTF8=1、ignored workspace basetemp）：`738 passed, 75 subtests passed, 0 warnings`，起點為 `705 passed, 75 subtests passed`。Static safety audit：只提交 code／public schema／fictional tests／此 aggregate 文件；real source text、batch material、mass UID／MapKey lists、private absolute paths、workspace artifacts 與 secrets 均未提交。Prompt/provider、TranslationRequest semantics、DB input_hash／resume／attempt semantics 未修改；不 merge main。
+
+```text
+B1-02 Production Integration P2 = ACCEPTED
+P3 TranslationRequest + Prompt Integration = NOT STARTED
+B1-03 Dialogue Context = NOT STARTED
+```
+
+本輪止於 P2 prepare adapter、full-universe build、inline materialization／validation、summary／manifest、determinism／isolation、fresh real prepare-only validation、docs 與指定 feature branch push；不開始 P3／P4 或 B1-03。
