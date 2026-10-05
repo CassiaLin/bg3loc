@@ -150,3 +150,105 @@ Do not translate or return the context fields.
 P1 production-owned context contract = implemented
 P2 prepare integration = not started
 ```
+
+## P1.5 public provenance prerequisite
+
+2026-10-05；起始 HEAD `7859bdc2955db37a0774fc390d9adda1fca7998e`。
+本節只補 public structural evidence；P1 semantics 不變，P2 prepare、P3、B1-03 均未開始。
+
+### Audit 與 exporter boundary
+
+- `research/stats.py` 原本讀到 localization line 即 yield，entry 後面的 `using`、非 localization data 與完整 definition 尚未保存。現在先完成整個 entry，再附相同 definition digest 到所有 occurrences。
+- `research/ui_skill_universe.py::_parse_xml` 原本在 node/direct attributes 選取 UUID、MapKey、Name 或 ordinal 後，只保留值為 `EntityName`。現在另存 `EntityIdentity`／`IdentityOrigin`，完整 GameObjects definition 包含其 nested nodes，nested field 不覆蓋 template identity。
+- `research/quest.py` 原本 `enclosing_entity_id` 把 direct native fields 與 generated ordinal 合併為同一個 `entityId` string。現在 explicit `ENTITY_ID`、`FALLBACK_ORDINAL`、無 node 的 `FALLBACK_NODE` 各自可辨。
+- `research/context.py` 的 passive evidence 現在附完整 stats provenance；quest candidate filter 與 aggregator 保存每一筆 evidence，consumer 必須逐 evidence 讀取，不能把 aggregate metadata 當唯一 definition。
+- `commands/research.py::run_research_map_request` 與既有 UI inheritance／precedence materialization 有 winner/selection semantics。因此新增獨立 `research export-provenance`，直接讀 raw public scan entries，加上 public UI/template provider discovery，不使用 legacy map 的 overlay winners、research retained artifacts 或 provider priority。既有 map/classify/batch 行為保留。
+
+### Public workflow 與 schema
+
+```powershell
+python -m bg3loc research scan --game-dir <your-BG3-install> --output <scan.json>
+python -m bg3loc research export-provenance --scan <scan.json> --output-dir <output-dir>
+```
+
+使用現有 public archive backend；需要使用者自己的 BG3 install，不需要 private retained artifact、manual lookup table 或 hardcoded real identities。
+exporter 對選入的 archive extraction、conversion、UTF-8 decoding 與 XML parsing fail closed，不以跳過壞檔宣告成功。支援 stats TXT 與 journal/template LSX、XML、LSF/LSB→LSX；遇到 unsupported selected format 會報錯。
+
+輸出：
+
+| Artifact | Contract |
+|---|---|
+| `structural-definitions.jsonl` | 每個完整 definition 一筆；包含沒有 localization occurrence 的 definitions |
+| `structural-occurrences.jsonl` | `contentUid`、`fieldName`、`fieldRole`、handle version、`occurrenceIndex` 及完整 definition provenance；不含 localized source text |
+| `structural-provenance-summary.json` | definition/occurrence origin counts、多 definition identities、distinct fingerprints；不含真實 identity lists |
+
+新 JSONL schema 為 `public-structural-provenance/1`，projection 為 `structural-definition/1`；machine-readable schemas 是 `public-structural-definition-v1.schema.json` 與 `public-structural-occurrence-v1.schema.json`。
+每筆都有 `entityIdentity`、`identityOrigin`、`sourceKind`、`sourceResource`、`definitionType`、`definitionFingerprint`、`definitionProjectionVersion`。stats 另有 `entryName`、`entryType`、`using`；entryName 始終是 identity，using 不變成 identity。
+
+Origin contract：`UUID`、`MAP_KEY`、`NAME`、`ENTRY_NAME`、`ENTITY_ID`、`FALLBACK_ORDINAL`、`FALLBACK_NODE`、`UNKNOWN`。
+XML 選取明確固定 native field 優先序：UUID/Guid/GUID、MapKey/Key、Name、entityId/EntityId/ID；不同 native keys 全部仍參與 digest。同一 native key 有不同 values 時標 `UNKNOWN`，不選 lowest UUID 或其中一值。
+quest 的 native fields 宣告 `ENTITY_ID`；generated fallback 不會因為字串像 UUID 而提升 origin。
+
+既有 research mapping schema 的 evidence properties／metadata 是 extensible object，新 provenance 欄位 additive；`ui-skill-universe.csv` 尾端新增 `EntityIdentity`、`IdentityOrigin`、`DefinitionFingerprint`、`SourceKind`、`SourceResource`，舊欄位與 consumer 讀取方式保留。legacy inherited/comment/raw rows 無完整 direct structural definition 時保留 `UNKNOWN`／空 digest，不偽造證據。P2 應讀取新 raw structural ledgers 作完整 definition universe，而非把 inheritance materialization 當 structural proof。
+
+### Definition fingerprint 與 multi-definition retention
+
+| 類別 | Definition boundary | Canonical projection |
+|---|---|---|
+| skill_spell/stats | 一個 `new entry`，直到下一 entry 或 EOF | definition type、entryName、全部 type/using directives、全部 data fields（含非 localization fields）、未識別 structural statements |
+| item | 一個 `node id="GameObjects"` template | node type、全部 native identity fields、全部 attributes（含 type/value/handle/version/reference）、完整 nested node subtree |
+| quest | 一個 journal node；無 node 時為 document fallback | 完整 node subtree、所有 native identity/structural/localization/reference fields；occurrence 關聯最近的 enclosing node |
+
+`SHA-256(UTF-8(canonical JSON))`：object keys 排序、compact separators、Unicode 保留、禁止 NaN；XML attribute field names 排序，stats 不同 field names 排序；同名重複 assignments/attributes 與有序 structural children 保留原始 semantic sequence。實際 semantic child sequence 改變會改 digest，不把有序 list 誤當無序集合。indentation、comments、行號、definition ordinal、resource/provider 路徑、timestamp、parser memory/state 不進 digest。未識別 stats statements 保守參與 digest，不默默丟掉可能的 structural fields。
+
+`sourceResource` 是 normalized relative `<package>/<archive internal path>`；拒絕 absolute、parent traversal、control characters。兩個 install locations 的同 payload 有相同 digest；來源位置保存在 provenance，與 digest 分離。
+
+全部 definitions 先保留，再依完整 serialized row dedup；等價於 identity + origin + fingerprint + source provenance，occurrence 再包含 UID/role/version/index。同 definition 內相同 UID/field/version 的重複 physical occurrences 以 binding-local index 保留；index 是 multiplicity/location metadata，不是 entity identity，也不參與 definition digest。相同 identity 的不同 fingerprints 與不同 source resources 都保留；沒有 first/last/path/UUID/resource-priority winner。JSONL rows 依 canonical serialized row 排序，summary keys 排序；input resource traversal／duplicate order 不改 intended output bytes。
+
+consumer 可從同 identity 的全部 definition rows 判斷 fingerprints 是否一致；summary 的「distinct fingerprints」只表示 competing definition evidence，不宣告 override winner 或已驗證 production conflict。不同種類的 stats entries 都輸出，`entryType` 供 consumer 沿用既有 skill entry type gate；origin 本身不是 production eligibility。
+
+### P1 compatibility 與驗收
+
+`tests/test_public_structural_provenance.py` 只用 fictional fixtures，從 exported public occurrence rows 加 synthetic English source join，構造 `SameEntitySourceRecord`。三類可靠來源：ENTRY_NAME→stats-entry-name、item UUID→template-uuid、quest ENTITY_ID→journal-entity-id；完整 row digest 作 evidence fingerprint、whole-definition digest 作 definition fingerprint、relative source 作 evidence source。三類均可建立 P1 context，新增 differing definition 後均由 P1 判為 `STRUCTURAL_CONFLICT`。
+item Name/MapKey、quest ordinal 仍被 P1 reliability gate 拒絕；未新增 production adapter/hook，也未放寬 P1。測試包含 full-definition semantic changes、field/key ordering、來源位置變更、duplicate exact definitions、multiple resources、無 localization fields definitions、nested boundaries、origin export、schemas、byte determinism、public CLI archive layers 與 static path safety。
+
+最終 synthetic targeted：新 provenance suite `39 passed`；full regression：`642 passed, 75 subtests passed, 0 warnings`。Windows 設定 `PYTHONUTF8=1`，pytest basetemp 留在 ignored `workspace/` 後執行 `python -m pytest -q`；預設 CP950 下兩個既有 portable translation tests 讀取 UTF-8 會失敗，未修改它們或 production code。
+
+### Real-corpus aggregate validation
+
+從本機使用者 BG3 install 重新跑 public scan（41,502 discovered resources），再使用最終 exporter 獨立跑兩次；全部 artifacts 留在 ignored workspace。三個輸出檔案逐 byte 相同。全部 49,860 definition rows 與 32,660 occurrence rows 通過新版 schema、origin populated、64-hex fingerprint、relative/non-private sourceResource 以及 occurrence→definition 關聯檢查；沒有 real rows/text/identity lists 放進本文件或 commit。
+
+| 類別／origin | Definitions | Occurrences |
+|---|---:|---:|
+| skill_spell / ENTRY_NAME | 11,721 | 13,449 |
+| other stats / ENTRY_NAME | 4,872 | 0 |
+| item / UUID | 0 | 0 |
+| item / MAP_KEY | 25,564 | 13,741 |
+| item / NAME | 0 | 0 |
+| item / fallback | 0 | 0 |
+| quest / ENTITY_ID | 4,306 | 4,125 |
+| quest / FALLBACK_ORDINAL | 3,397 | 1,345 |
+
+skill_spell aggregate 依既有 entry types `SpellData`、`PassiveData`、`StatusData`、`InterruptData` 計算；exporter 仍保留全部 stats，沒有按此 gate 篩掉 definitions。item 的真實 occurrences 全部 MapKey-derived；即使值呈 UUID 字串形狀，也不宣告 UUID origin。沿用 P1 的 UUID gate 時，此 corpus 的 UUID-origin item coverage 為 0；本輪不放寬 policy。
+
+| Identity aggregate | >1 definition/provenance | >1 distinct fingerprint |
+|---|---:|---:|
+| skill_spell | 273 | 256 |
+| other stats | 181 | 177 |
+| all StatsEntry | 454 | 433 |
+| item | 4 | 4 |
+| quest（全部 exported identity strings，含 fallback） | 468 | 460 |
+| quest（native ENTITY_ID only） | 436 | 431 |
+
+fallback 字串的跨 resource 重複不表示已證明同一 production entity；上表只報 raw competing-definition evidence。沒有為降低數字調整 digest、套用 source priority 或選 winner。
+
+Git safety audit：real corpus/text、mass ContentUid、mass UUID/entity list、private absolute path、workspace、secret 均未 commit。變更只有 research parser/exporter、public schemas、fictional tests 與本節；production prepare、TranslationRequest、prompt/provider、DB/hash/resume、P1 semantics 均未修改。
+
+```text
+B1-02 Production Integration P1.5 = ACCEPTED
+P2 Prepare Integration = READY TO RESUME
+P3 = NOT STARTED
+B1-03 = NOT STARTED
+```
+
+兩個 public provenance blockers 已解除；P2 尚未實作，停在 P1.5 exporter prerequisite。production adapter 後續必須保留完整 definition universe（含沒有 localization occurrence 的 definitions），沿用既有 reliability/conflict gates。
