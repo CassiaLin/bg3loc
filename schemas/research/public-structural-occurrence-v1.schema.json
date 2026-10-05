@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": "public-structural-provenance/1"
+    },
+    "definitionProjectionVersion": {
+      "const": "structural-definition/1"
+    },
+    "definitionType": {
+      "enum": [
+        "StatsEntry",
+        "GameObjectTemplate",
+        "QuestJournalNode",
+        "UiNode"
+      ]
+    },
+    "entityIdentity": {
+      "type": "string",
+      "minLength": 1
+    },
+    "identityOrigin": {
+      "enum": [
+        "UUID",
+        "MAP_KEY",
+        "NAME",
+        "ENTRY_NAME",
+        "ENTITY_ID",
+        "FALLBACK_ORDINAL",
+        "FALLBACK_NODE",
+        "UNKNOWN"
+      ]
+    },
+    "definitionFingerprint": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sourceKind": {
+      "enum": [
+        "StatsDefinition",
+        "GameObjectTemplate",
+        "QuestJournal",
+        "UiDefinition"
+      ]
+    },
+    "sourceResource": {
+      "type": "string",
+      "pattern": "^(?!/)(?!.*:)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\x00-\\x1f]*$",
+      "minLength": 1
+    },
+    "contentUid": {
+      "type": "string",
+      "pattern": "^h[0-9a-fA-F]{8}g[0-9a-fA-F]{4}g[0-9a-fA-F]{4}g[0-9a-fA-F]{4}g[0-9a-fA-F]{12}$"
+    },
+    "fieldName": {
+      "type": "string"
+    },
+    "fieldRole": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "entryName": {
+      "type": "string"
+    },
+    "entryType": {
+      "type": "string"
+    },
+    "using": {
+      "type": "string"
+    },
+    "occurrenceIndex": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "additionalProperties": false,
+  "title": "PublicStructuralOccurrenceV1",
+  "$id": "https://github.com/CassiaLin/bg3loc/schemas/research/public-structural-occurrence-v1.schema.json",
+  "required": [
+    "schemaVersion",
+    "definitionProjectionVersion",
+    "definitionType",
+    "entityIdentity",
+    "identityOrigin",
+    "definitionFingerprint",
+    "sourceKind",
+    "sourceResource",
+    "contentUid",
+    "fieldName",
+    "fieldRole",
+    "version",
+    "occurrenceIndex"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "definitionType": {
+            "const": "StatsEntry"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "entryName",
+          "entryType",
+          "using"
+        ]
+      }
+    }
+  ]
+}

@@ -33,74 +33,33 @@ def parse_stats_text(
     provider: str = "",
     all_fields: bool = False
 ) -> Iterator[ResearchMapping]:
-    """Parse Larian stats text grammar and extract localization handle mappings."""
-    current_entry: str | None = None
-    current_type: str = ""
-    current_using: str = ""
+    """Extract occurrences only after their complete stats entry has been read."""
+    from bg3loc.research.structural_provenance import parse_structural_stats
 
-    lines = text.splitlines()
-    for line_idx, raw_line in enumerate(lines, start=1):
-        line = raw_line.strip()
-        if not line or line.startswith("//") or line.startswith("#"):
-            continue
-
-        entry_m = RE_ENTRY.match(line)
-        if entry_m:
-            current_entry = entry_m.group("name")
-            current_type = ""
-            current_using = ""
-            continue
-
-        if not current_entry:
-            continue
-
-        type_m = RE_TYPE.match(line)
-        if type_m:
-            current_type = type_m.group("type")
-            continue
-
-        using_m = RE_USING.match(line)
-        if using_m:
-            current_using = using_m.group("using")
-            continue
-
-        data_m = RE_DATA.match(line)
-        if data_m:
-            field_name = data_m.group("field")
-            field_val = data_m.group("value")
-
-            if not all_fields and field_name not in STAT_LOCALIZATION_FIELDS:
-                # Still check if value matches handle pattern directly
-                if not HANDLE_PATTERN.search(field_val):
-                    continue
-
-            for match in HANDLE_PATTERN.finditer(field_val):
-                uid = match.group("uid")
-                ver = match.group("ver") or ""
-
-                evidence = ResearchEvidence(
-                    sourceRole="StatsRecordField",
-                    resourcePath=resource_path,
-                    evidenceType="StatsDefinition",
-                    ruleId=RULE_STAT_DIRECT,
-                    properties={
-                        "entryName": current_entry,
-                        "entryType": current_type,
-                        "using": current_using,
-                        "fieldName": field_name,
-                        "line": line_idx,
-                        "provider": provider,
-                    }
-                )
-
-                yield ResearchMapping(
-                    contentUid=uid,
-                    mappingType="stat-reference",
-                    classification="StatLocalizationReference",
-                    evidence=[evidence],
-                    version=ver,
-                    metadata={
-                        "entryName": current_entry,
-                        "fieldName": field_name,
-                    }
-                )
+    for definition in parse_structural_stats(text, resource_path=resource_path, package=provider):
+        directives = definition.payload["directives"]
+        entry_type = directives.get("type", [""])[-1]
+        using = directives.get("using", [""])[-1]
+        for occurrence in definition.occurrences:
+            properties = {
+                **definition.provenance(),
+                "entryName": definition.entity_identity,
+                "entryType": entry_type,
+                "using": using,
+                "fieldName": occurrence.field_name,
+                "fieldRole": occurrence.field_role,
+                "line": occurrence.location,
+                "provider": provider,
+            }
+            evidence = ResearchEvidence(
+                sourceRole="StatsRecordField", resourcePath=resource_path,
+                evidenceType="StatsDefinition", ruleId=RULE_STAT_DIRECT,
+                properties=properties,
+            )
+            yield ResearchMapping(
+                contentUid=occurrence.content_uid, mappingType="stat-reference",
+                classification="StatLocalizationReference", evidence=[evidence],
+                version=occurrence.version,
+                metadata={**definition.provenance(), "entryName": definition.entity_identity,
+                          "fieldName": occurrence.field_name, "fieldRole": occurrence.field_role},
+            )

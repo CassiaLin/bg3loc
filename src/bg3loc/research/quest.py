@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import re
 from typing import Iterator
 import xml.etree.ElementTree as ET
 
-from bg3loc.research.model import HANDLE_PATTERN, ResearchEvidence, ResearchMapping
+from bg3loc.research.model import ResearchEvidence, ResearchMapping
 
 RULE_QUEST_JOURNAL = "BG3-QUEST-JOURNAL-EVIDENCE"
 
@@ -35,87 +34,35 @@ def parse_quest_xml(
     except ET.ParseError:
         return
 
-    # Element index remains deterministic for a converted resource. In addition,
-    # retain the nearest enclosing node identity so batching can keep fields from the
-    # same journal entity together without treating the index itself as content identity.
-    parent_map = {child: parent for parent in root.iter() for child in list(parent)}
-    node_ordinals = {
-        elem: index
-        for index, elem in enumerate(
-            (candidate for candidate in root.iter() if candidate.tag.rsplit("}", 1)[-1] == "node"),
-            start=1,
-        )
-    }
+    from bg3loc.research.structural_provenance import parse_structural_xml
 
-    def enclosing_entity_id(elem: ET.Element) -> str:
-        current: ET.Element | None = elem
-        while current is not None:
-            if current.tag.rsplit("}", 1)[-1] == "node":
-                direct_identity = next(
-                    (
-                        child.attrib.get("value", "") or child.attrib.get("handle", "")
-                        for child in list(current)
-                        if child.tag.rsplit("}", 1)[-1] == "attribute"
-                        and child.attrib.get("id", "") in {"UUID", "MapKey", "Name", "ID", "Guid", "GUID"}
-                        and (child.attrib.get("value") or child.attrib.get("handle"))
-                    ),
-                    "",
-                )
-                if direct_identity:
-                    return direct_identity
-                return f"{current.attrib.get('id', 'node')}#{node_ordinals.get(current, 0)}"
-            current = parent_map.get(current)
-        return ""
-
-    for element_index, elem in enumerate(root.iter(), start=1):
-        handle = elem.attrib.get("handle") or ""
-        field_id = elem.attrib.get("id") or elem.attrib.get("name") or elem.tag
-        ver = elem.attrib.get("version") or ""
-
-        if not handle:
-            val = elem.attrib.get("value") or elem.text or ""
-            m = HANDLE_PATTERN.search(val)
-            if m:
-                handle = m.group("uid")
-                ver = ver or m.group("ver") or ""
-
-        m = HANDLE_PATTERN.search(handle)
-        if not m:
-            continue
-
-        uid = m.group("uid")
-        ver = ver or m.group("ver") or ""
-        role = classify_quest_field_role(field_id, [elem.tag])
-        entity_id = enclosing_entity_id(elem)
-
-        evidence = ResearchEvidence(
-            sourceRole="QuestJournalField",
-            resourcePath=resource_path,
-            evidenceType="QuestJournal",
-            ruleId=RULE_QUEST_JOURNAL,
-            properties={
-                "fieldName": field_id,
-                "fieldRole": role,
-                "pakName": pak_name,
-                "elementIndex": element_index,
-                "entityId": entity_id,
+    definitions = parse_structural_xml(xml_text, resource_path=resource_path,
+                                       package=pak_name, kind="quest")
+    # Keep the legacy global elementIndex solely as occurrence location metadata.
+    indices = {elem: index for index, elem in enumerate(root.iter(), 1)}
+    nodes = [elem for elem in root.iter() if elem.tag.rsplit("}", 1)[-1] == "node"] or [root]
+    for node, definition in zip(nodes, definitions):
+        local_indices = {index: elem for index, elem in enumerate(node.iter(), 1)}
+        for occurrence in definition.occurrences:
+            element_index = indices[local_indices[occurrence.location]]
+            properties = {
+                **definition.provenance(), "fieldName": occurrence.field_name,
+                "fieldRole": occurrence.field_role, "pakName": pak_name,
+                "elementIndex": element_index, "entityId": definition.entity_identity,
             }
-        )
-
-        yield ResearchMapping(
-            contentUid=uid,
-            mappingType="quest-journal",
-            classification=role,
-            evidence=[evidence],
-            version=ver,
-            reviewRequired=True,
-            metadata={
-                "questFieldRole": role,
-                "fieldName": field_id,
-                "elementIndex": element_index,
-                "entityId": entity_id,
-            }
-        )
+            evidence = ResearchEvidence(
+                sourceRole="QuestJournalField", resourcePath=resource_path,
+                evidenceType="QuestJournal", ruleId=RULE_QUEST_JOURNAL,
+                properties=properties,
+            )
+            yield ResearchMapping(
+                contentUid=occurrence.content_uid, mappingType="quest-journal",
+                classification=occurrence.field_role, evidence=[evidence],
+                version=occurrence.version, reviewRequired=True,
+                metadata={**definition.provenance(), "questFieldRole": occurrence.field_role,
+                          "fieldName": occurrence.field_name, "elementIndex": element_index,
+                          "entityId": definition.entity_identity},
+            )
 
 
 def filter_quest_context_candidates(

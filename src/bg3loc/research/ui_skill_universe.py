@@ -5,13 +5,16 @@ import re
 import tempfile
 import xml.etree.ElementTree as ET
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from pathlib import Path
 from typing import Iterable, Iterator, Sequence
 
 from bg3loc.backends import ArchiveBackend
 from bg3loc.research.model import HANDLE_PATTERN
+from bg3loc.research.structural_provenance import (
+    IdentityOrigin, parse_structural_stats, parse_structural_xml,
+)
 
 RULE_UI_SKILL_PROVIDER_UNIVERSE = "BG3-UI-SKILL-PROVIDER-UNIVERSE"
 RULE_UI_SKILL_INHERITANCE = "BG3-UI-SKILL-INHERITANCE-CLOSURE"
@@ -95,6 +98,11 @@ class UiSkillOccurrence:
     explicit_or_inherited: str = "explicit"
     comment_only: bool = False
     defining_provider: str = ""
+    entity_identity: str = ""
+    identity_origin: IdentityOrigin = IdentityOrigin.UNKNOWN
+    definition_fingerprint: str = ""
+    source_kind: str = ""
+    source_resource: str = ""
 
 
 @dataclass(slots=True)
@@ -265,42 +273,21 @@ def _iter_uids(value: str) -> Iterator[str]:
 
 def _parse_stats(text: str, provider: UiSkillProvider) -> list[UiSkillOccurrence]:
     result = _line_comment_occurrences(text, provider)
-    entity = ""
-    entity_type = "StatsRecord"
-    parent = ""
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("//") or line.startswith("#"):
-            continue
-        match = _ENTRY_RE.match(line)
-        if match:
-            entity = match.group("name")
-            entity_type = "StatsRecord"
-            parent = ""
-            continue
-        match = _TYPE_RE.match(line)
-        if match and entity:
-            entity_type = match.group("value") or "StatsRecord"
-            continue
-        match = _USING_RE.match(line)
-        if match and entity:
-            parent = match.group("value")
-            continue
-        match = _DATA_RE.match(line)
-        if match and entity:
-            for uid in _iter_uids(match.group("value")):
-                result.append(UiSkillOccurrence(
-                    content_uid=uid,
-                    provider=provider.identity,
-                    package=provider.package,
-                    internal_path=provider.internal_path,
-                    source_families=provider.source_families,
-                    domains=_domain(provider),
-                    entity_type=entity_type,
-                    entity_name=entity,
-                    field_name=match.group("name"),
-                    parent_name=parent,
-                ))
+    for definition in parse_structural_stats(text, resource_path=provider.internal_path,
+                                              package=provider.package):
+        directives = definition.payload["directives"]
+        for occurrence in definition.occurrences:
+            result.append(UiSkillOccurrence(
+                content_uid=occurrence.content_uid, provider=provider.identity,
+                package=provider.package, internal_path=provider.internal_path,
+                source_families=provider.source_families, domains=_domain(provider),
+                entity_type=directives.get("type", ["StatsRecord"])[-1] or "StatsRecord",
+                entity_name=definition.entity_identity, field_name=occurrence.field_name,
+                parent_name=directives.get("using", [""])[-1],
+                entity_identity=definition.entity_identity, identity_origin=definition.identity_origin,
+                definition_fingerprint=definition.fingerprint, source_kind=definition.source_kind,
+                source_resource=definition.source_resource,
+            ))
     return result
 
 
@@ -322,10 +309,23 @@ def _parse_xml(text: str, provider: UiSkillProvider) -> list[UiSkillOccurrence]:
                 Path(provider.internal_path).name, f"XmlComment:{index}", comment_only=True,
             ))
     element_ord = 0
+    kind = "ui" if provider.resource_format == "XAML" else "item"
+    parsed = parse_structural_xml(text, resource_path=provider.internal_path,
+                                  package=provider.package, kind=kind)
+    if kind == "item" and not parsed:
+        parsed = parse_structural_xml(text, resource_path=provider.internal_path,
+                                      package=provider.package, kind="ui")
+    boundaries = ([node for node in root.iter() if node.tag.rsplit("}", 1)[-1] == "node"
+                   and node.get("id") == "GameObjects"] if kind == "item" else [])
+    if not boundaries:
+        boundaries = [node for node in root.iter() if node.tag.rsplit("}", 1)[-1] == "node"] or list(root.iter())
+    definition_by_node = dict(zip(boundaries, parsed))
 
-    def walk(node: ET.Element, enclosing_entity: str = "", enclosing_type: str = "") -> None:
+    def walk(node: ET.Element, enclosing_entity: str = "", enclosing_type: str = "", definition=None) -> None:
         nonlocal element_ord
         element_ord += 1
+        definition = definition_by_node.get(node, definition)
+        before = len(result)
         local = _local_name(node.tag)
         entity_name = enclosing_entity
         entity_type = enclosing_type
@@ -371,8 +371,15 @@ def _parse_xml(text: str, provider: UiSkillProvider) -> list[UiSkillOccurrence]:
             for uid in _iter_uids(value):
                 result.append(UiSkillOccurrence(uid, provider.identity, provider.package, provider.internal_path, provider.source_families, _domain(provider), enclosing_type or "node", enclosing_entity or "document", field or "attribute"))
 
+        if definition is not None:
+            for index in range(before, len(result)):
+                result[index] = replace(result[index],
+                    entity_identity=definition.entity_identity,
+                    identity_origin=definition.identity_origin,
+                    definition_fingerprint=definition.fingerprint,
+                    source_kind=definition.source_kind, source_resource=definition.source_resource)
         for child in list(node):
-            walk(child, entity_name, entity_type)
+            walk(child, entity_name, entity_type, definition)
 
     walk(root)
     return result
@@ -588,6 +595,7 @@ def write_ui_skill_universe(
             "SourceFamilies", "Domains", "EntityType", "EntityName", "FieldName",
             "ParentName", "InheritanceDepth", "ExplicitOrInherited", "CommentOnly",
             "DefiningProvider", "ProviderOverrideApplied",
+            "EntityIdentity", "IdentityOrigin", "DefinitionFingerprint", "SourceKind", "SourceResource",
         ])
         for uid in sorted(by_uid):
             rows = by_uid[uid]
@@ -600,6 +608,9 @@ def write_ui_skill_universe(
             for item in sorted(rows, key=lambda value: (
                 value.comment_only, value.provider, value.internal_path, value.entity_name,
                 value.field_name, value.inheritance_depth, value.content_uid,
+                value.identity_origin, value.definition_fingerprint, value.source_resource,
+                value.parent_name, value.defining_provider, value.entity_type,
+                value.source_families, value.domains,
             )):
                 writer.writerow([
                     uid,
@@ -619,4 +630,6 @@ def write_ui_skill_universe(
                     str(item.comment_only).lower(),
                     item.defining_provider or item.provider,
                     str(bool(item.defining_provider and item.defining_provider != item.provider)).lower(),
+                    item.entity_identity, item.identity_origin.value, item.definition_fingerprint,
+                    item.source_kind, item.source_resource,
                 ])

@@ -147,6 +147,13 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     map_p.add_argument("--reference", action="append", default=[], help="Reference locales")
     map_p.set_defaults(handler=run_research_map)
 
+    provenance_p = research_subparsers.add_parser(
+        "export-provenance", help="Export all structural definitions without winner selection",
+    )
+    provenance_p.add_argument("--scan", required=True, help="Public research scan manifest")
+    provenance_p.add_argument("--output-dir", required=True, help="Structural provenance output directory")
+    provenance_p.set_defaults(handler=run_research_provenance_export)
+
     # bg3loc research classify
     classify_p = research_subparsers.add_parser(
         "classify",
@@ -1250,6 +1257,24 @@ def run_research_map(args: argparse.Namespace) -> int:
         target=str(args.target),
         references=tuple(args.reference),
     ))
+
+
+def run_research_provenance_export(args: argparse.Namespace) -> int:
+    from bg3loc.research.provenance_export import export_public_structural_provenance
+
+    scan = json.loads(Path(args.scan).read_text(encoding="utf-8-sig"))
+    if not scan.get("gameDir"):
+        raise ValueError("scan manifest missing gameDir")
+    probe = resolve_backend()
+    backend = backend_from_probe(probe)
+    if backend is None:
+        raise RuntimeError("No archive backend available for structural provenance export")
+    summary = export_public_structural_provenance(
+        Path(scan["gameDir"]), backend, Path(args.output_dir),
+        [ResearchScanResource(**row) for row in scan.get("resources", [])],
+    )
+    print(json.dumps(summary, sort_keys=True))
+    return 0
 
 
 def run_research_map_request(request: ResearchMapRequest) -> int:

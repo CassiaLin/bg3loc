@@ -86,6 +86,14 @@ def extract_passive_context_hits(
     if not target_uids:
         return
 
+    # Preserve complete entry provenance even if using/non-localized fields occur
+    # after the localization-bearing line.
+    from bg3loc.research.stats import parse_stats_text
+    provenance = {
+        (mapping.evidence[0].properties["line"], mapping.contentUid): mapping.metadata
+        for mapping in parse_stats_text(text, resource_path=resource_path, provider=pak_name)
+    }
+
     current_entry: str | None = None
     current_type: str = ""
 
@@ -130,6 +138,7 @@ def extract_passive_context_hits(
                         evidenceType="PassiveContext",
                         ruleId=RULE_PASSIVE_CONTEXT,
                         properties={
+                            **provenance[(line_idx, uid)],
                             "pakName": pak_name,
                             "entryName": current_entry,
                             "entryType": current_type,
