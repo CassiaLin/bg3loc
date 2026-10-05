@@ -74,6 +74,15 @@
     "occurrenceIndex": {
       "type": "integer",
       "minimum": 1
+    },
+    "templateType": {
+      "type": "string"
+    },
+    "identityIsNative": {
+      "type": "boolean"
+    },
+    "fieldIsDirect": {
+      "type": "boolean"
     }
   },
   "additionalProperties": false,

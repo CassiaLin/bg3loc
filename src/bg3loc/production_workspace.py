@@ -9,9 +9,10 @@ import sqlite3
 from typing import Any
 
 from bg3loc.ruleset_io import load_ruleset
+from bg3loc.production_context import verify_context_materialization
 
 
-SUPPORTED_PRODUCTION_MANIFEST_SCHEMAS = frozenset({"1.0", "1.1"})
+SUPPORTED_PRODUCTION_MANIFEST_SCHEMAS = frozenset({"1.0", "1.1", "1.2"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,6 +167,8 @@ def verify_production_workspace(workspace: Path) -> ProductionWorkspaceBinding:
         or batch_materials_fingerprint(batch_plan) != expected_materials
     ):
         raise RuntimeError("production batch material integrity mismatch")
+
+    verify_context_materialization(batch_plan, root, manifest)
 
     plan = _load_json(batch_plan)
     plan_fingerprint = str(plan.get("batchPlanFingerprint", ""))

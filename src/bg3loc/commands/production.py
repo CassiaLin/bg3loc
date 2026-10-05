@@ -67,6 +67,7 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     prepare_p.add_argument("--output", required=True, help="Fresh production workspace directory")
     prepare_p.add_argument("--story-ledger", help="Optional story-occurrence-ledger.csv")
     prepare_p.add_argument("--ui-skill-universe", help="Optional ui-skill-universe.csv")
+    prepare_p.add_argument("--structural-provenance", help="Public structural provenance directory; enable prepare-time inline context")
     prepare_p.add_argument("--unclassified-decisions", help="Optional unclassified decision JSONL")
     prepare_p.add_argument(
         "--max-records",
@@ -231,6 +232,7 @@ def run_prepare(args: argparse.Namespace) -> int:
                 else None
             ),
             max_records=tuple(args.max_records),
+            structural_provenance=(Path(args.structural_provenance) if getattr(args, "structural_provenance", None) else None),
         )
     )
     print("Production prepare PASS")

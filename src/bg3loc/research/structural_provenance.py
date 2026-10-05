@@ -61,6 +61,7 @@ class StructuralOccurrence:
     field_role: str
     version: str = ""
     location: int = 0
+    is_direct: bool = False
 
 
 @dataclass(frozen=True)
@@ -98,6 +99,23 @@ class StructuralDefinition:
             row.update(entryName=self.entity_identity,
                        entryType=directives.get("type", [""])[-1],
                        using=directives.get("using", [""])[-1])
+        elif self.definition_type == "GameObjectTemplate":
+            node = self.payload["node"]
+            fields = node["fields"]
+            types = fields.get("Type", [])
+            template_type = types[0]["attributes"].get("value", "") if len(types) == 1 else ""
+            candidates = ("MapKey",) if self.identity_origin == IdentityOrigin.MAP_KEY else (
+                ("UUID", "Guid", "GUID") if self.identity_origin == IdentityOrigin.UUID else ())
+            native = False
+            for name in candidates:
+                values = ([node["attributes"][name]] if node["attributes"].get(name) else [])
+                values += [item["attributes"].get("value") or item["attributes"].get("handle", "")
+                           for item in fields.get(name, [])]
+                if values:
+                    native = len(values) == 1 and values[0] == self.entity_identity
+                    break
+            row.update(templateType=template_type,
+                       identityIsNative=native and node["attributes"].get("id") == "GameObjects")
         return row
 
     def occurrence_rows(self) -> list[dict]:
@@ -108,9 +126,12 @@ class StructuralDefinition:
         for item in self.occurrences:
             key = (item.content_uid, item.field_name, item.field_role, item.version)
             indices[key] += 1
-            result.append({**self.to_dict(), "contentUid": item.content_uid,
+            row = {**self.to_dict(), "contentUid": item.content_uid,
                            "fieldName": item.field_name, "fieldRole": item.field_role,
-                           "version": item.version, "occurrenceIndex": indices[key]})
+                           "version": item.version, "occurrenceIndex": indices[key]}
+            if self.definition_type == "GameObjectTemplate":
+                row["fieldIsDirect"] = item.is_direct
+            result.append(row)
         return result
 
 
@@ -280,7 +301,8 @@ def parse_structural_xml(text: str, *, resource_path: str = "", package: str = "
                 for handle in HANDLE_PATTERN.finditer(value):
                     occurrences.append(StructuralOccurrence(handle["uid"], field_name,
                                        role if kind == "quest" else field_name,
-                                       elem.get("version") or handle["ver"] or "", index))
+                                       elem.get("version") or handle["ver"] or "", index,
+                                       parents.get(elem) is node))
         result.append(StructuralDefinition(definition_type, identity, origin,
                                            source_kind, resource, payload, tuple(occurrences)))
     return result

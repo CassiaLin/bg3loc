@@ -16,6 +16,7 @@ from bg3loc.commands.research import (
 )
 from bg3loc.commands.translation_state import run_init
 from bg3loc.execution_state import TranslationExecutionStore
+from bg3loc.production_context import materialize_contexts
 from bg3loc.research.classification_resolution import resolve_unclassified
 from bg3loc.ruleset_io import load_ruleset
 from bg3loc.production_workspace import (
@@ -35,6 +36,7 @@ class ProductionPrepareRequest:
     ui_skill_universe: Path | None = None
     unclassified_decisions: Path | None = None
     max_records: tuple[str, ...] = ()
+    structural_provenance: Path | None = None
 
 
 def _sha256_file(path: Path) -> str:
@@ -93,6 +95,9 @@ def prepare_production_workspace(request: ProductionPrepareRequest) -> dict[str,
             "run 'bg3loc research scan' then 'bg3loc research map' on your game installation"
         )
     _require_file(request.ruleset, "ruleset")
+    if request.structural_provenance is not None:
+        for name in ("structural-definitions.jsonl", "structural-occurrences.jsonl"):
+            _require_file(request.structural_provenance / name, "public structural provenance")
     research_dir = request.research_mappings.parent
     effective_story_ledger = request.story_ledger
     if effective_story_ledger is None:
@@ -128,6 +133,8 @@ def prepare_production_workspace(request: ProductionPrepareRequest) -> dict[str,
     target_locale = str(extract_payload.get("targetLocale", "")).strip()
     if not source_locale:
         raise RuntimeError("extract manifest missing sourceLocale")
+    if request.structural_provenance is not None and source_locale.casefold() != "english":
+        raise RuntimeError("same-entity context requires normalized English source")
     if not target_locale:
         raise RuntimeError("extract manifest missing targetLocale")
 
@@ -216,6 +223,15 @@ def prepare_production_workspace(request: ProductionPrepareRequest) -> dict[str,
             + ", ".join(missing_rules)
         )
 
+    context_metadata = None
+    if request.structural_provenance is not None:
+        context_metadata = materialize_contexts(
+            batch_plan=batch_plan, classification=batch_classification,
+            source=request.source, provenance_dir=request.structural_provenance,
+            summary_path=output / "context-materialization-summary.json",
+            ui_skill_universe=effective_ui_skill_universe,
+        )
+
     db_path = output / "execution.sqlite3"
     run_init(
         Namespace(
@@ -233,7 +249,7 @@ def prepare_production_workspace(request: ProductionPrepareRequest) -> dict[str,
     execution_metadata = execution.get_metadata()
 
     manifest: dict[str, Any] = {
-        "schemaVersion": "1.1",
+        "schemaVersion": "1.2" if context_metadata is not None else "1.1",
         "sourceLocale": source_locale,
         "targetLocale": target_locale,
         "inputs": {
@@ -298,6 +314,9 @@ def prepare_production_workspace(request: ProductionPrepareRequest) -> dict[str,
             ),
         },
     }
+
+    if context_metadata is not None:
+        manifest["sameEntityContext"] = context_metadata
 
     if effective_story_ledger is not None:
         manifest["inputs"]["storyLedger"] = {

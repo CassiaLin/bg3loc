@@ -57,6 +57,12 @@
     },
     "using": {
       "type": "string"
+    },
+    "templateType": {
+      "type": "string"
+    },
+    "identityIsNative": {
+      "type": "boolean"
     }
   },
   "additionalProperties": false,
