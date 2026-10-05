@@ -252,3 +252,152 @@ B1-03 = NOT STARTED
 ```
 
 兩個 public provenance blockers 已解除；P2 尚未實作，停在 P1.5 exporter prerequisite。production adapter 後續必須保留完整 definition universe（含沒有 localization occurrence 的 definitions），沿用既有 reliability/conflict gates。
+
+## P1.6 Item MapKey Reliability Audit
+
+2026-10-06；starting HEAD `b1b21139e886d85401a24540cacd5b82de837a69`，branch `feat/b1-02-same-entity-context`。開始前 fetch／checkout 後，HEAD 與 origin 相同且 working tree clean。
+
+**Item MapKey Reliability = CONDITIONAL**。在本次安裝 snapshot 的 RootTemplates universe 中，直接位於 `GameObjects` definition 的非空 MapKey 是可驗證的原生 template key，不是 parser fallback。它不能單獨保證唯一完整 definition：4 個 key 有 competing fingerprints，其中 3 個為 native `Type=item`。建議只接受已驗證的 item boundary、直接 localization roles，並保留全部 definitions，由 whole-definition conflict gate 排除不一致 key；本輪不修改 P1 policy 或任何 runtime code。
+
+### Structural source 與 identity precedence
+
+追查 `ui_skill_universe._parse_xml` → `parse_structural_xml(kind="item")` → `xml_identity`。P1.5 的新 `entityIdentity`／`identityOrigin` 來自中央 structural parser；legacy `EntityName` 仍使用既有 traversal 邏輯，不能取代新 provenance。完整 definition boundary 是 `node id="GameObjects"`，取 boundary 自己的 element attributes 或**直接** `<attribute>` children，不從後代任意搜尋 identity。
+
+實際的六個 RootTemplates archive resources 全為 LSF，使用公開 LSLib 轉換為 LSX 後，每個 boundary 都包含一個直接 `attribute id="MapKey" type="FixedString"`，其非空 `value` 與 exported `entityIdentity` 完全一致。25,564 個 definitions 都如此；沒有從檔名、Name、resource path、ordinal、相似文字或 nested reference 推導 MapKey。原始來源是 definition 本身的欄位，並非 parser 生成值；此檢查限於公開 LSF→LSX decoding 後的結構，不宣告已驗證 engine serializer 的所有版本。
+
+固定 candidate precedence：`UUID` → `Guid` → `GUID` → `MapKey` → `Key` → `Name` → `entityId` → `EntityId` → `ID` → ordinal fallback。選取非空 `value`／`handle`；選中的同名 candidate 有多個不同值時標 `UNKNOWN`，不選 winner。
+
+| Boundary 自己的欄位 | Presence | Nonempty identity candidate |
+|---|---:|---:|
+| MapKey | 25,564 | 25,564 |
+| UUID | 114 | 0 |
+| Guid / GUID | 0 | 0 |
+| Key | 31 | 30 |
+| Name | 25,564 | 25,564 |
+| entityId / EntityId / ID | 0 | 0 |
+
+114 個直接 UUID 欄位全部位於 native `Type=decal`，是空 `FixedString`，無非空 handle、無 child elements；不是漏讀藏在 UUID field 裡的 root identity。其餘 25,450 個 boundaries 沒有直接 UUID，包含全部 native items。全部 MapKey origin 的原因是本 corpus 的原生 root key 已 populated，而較高優先序的 UUID candidates 均不可用；不能說「整個 subtree 根本沒有 UUID」。
+
+Subtree 另有 1,548 個 nested UUID：`Item` 142、`Script` 503、`tile` 903；還有 28,856 個 nested MapKey，owner nodes 是 `Object`、`Parameter`、`PickingPhysicsTemplates`。它們屬於各自子結構，沒有作為 enclosing GameObjects identity。直接 `guid`-typed fields 亦有 Race、Faction、AiHint、EquipmentRace 等 reference／property fields；GUID 形狀或 storage type 不足以升格成 template identity。
+
+22,253 個非空 `ParentTemplateId` references 全部精確指向這個 universe 的原生 MapKeys，共涉及 3,041 個 target keys。這是 MapKey 扮演 template address、而非 display metadata 的獨立 structural evidence；沒有用 parent reference 把不同子 template 合併。
+
+公開 [BG3SE template lookup implementation](https://github.com/Norbyte/bg3se/blob/main/BG3Extender/Lua/Libs/ClientTemplate.inl) 以 FixedString template ID 查詢 template bank；[GameObjectTemplate definitions](https://github.com/Norbyte/bg3se/blob/main/BG3Extender/GameDefinitions/RootTemplates.h) 區分 `Id`、`Name`、`ParentTemplateId`，並把 `InventoryItemData.UUID`／`TemplateID` 放在另一個 nested 結構。這些 primary implementation sources 支持 template identifier 與其他 UUID/reference 的角色區分；它們本身沒有證明 serialized MapKey 與 runtime `Id` 的所有版本映射。本 audit 的 native-key 判斷是根據實際 boundary、reference matching 與完整 definition grouping 所作的 structural inference，沒有依靠 GUID-like spelling。
+
+### Corpus 範圍與 aggregates
+
+本次 user-owned install 的 Steam build ID 是 `25605617`。重新使用 P1.5 public scan selection 加 public provider discovery 的 RootTemplates union，核對正好六個資源；由遊戲 archive 重新 extraction／conversion／parsing。fresh definition rows 與 occurrence rows 分別和 P1.5 最終輸出完全相同，沒有讀取舊 private research corpus。
+
+**P1.5 表中的「item」其實是全部 exported `GameObjectTemplate`，不是 native `Type=item`。** 本輪保留該比較範圍，另從原始直接 `Type` field 計算真正 item subset，不修改既有 exporter schema 或 category policy。
+
+| Native Type | Definitions | Localization occurrences |
+|---|---:|---:|
+| item | 9,331 | 11,553 |
+| character | 2,464 | 1,051 |
+| scenery | 10,252 | 987 |
+| surface | 87 | 150 |
+| other types | 3,430 | 0 |
+| all GameObjects / P1.5 item bucket | 25,564 | 13,741 |
+
+Definition counts 使用完整 exported definition/provenance rows；fresh physical boundary count 與此相同，沒有被 exact-row dedup 掩蓋的額外同資源 boundaries。Unique key 使用原始非空 MapKey 精確值，不以 sourceResource 分組來隱藏跨 resource 衝突。
+
+| Aggregate | All GameObjects | Native Type=item |
+|---|---:|---:|
+| Definitions with native MapKey | 25,564 | 9,331 |
+| Localization occurrences | 13,741 | 11,553 |
+| Unique MapKeys | 25,560 | 9,328 |
+| MapKeys used by >1 definition | 4 | 3 |
+| Additional definition rows after first per key | 4 | 3 |
+| Definition rows under repeated keys | 8 | 6 |
+| Same key → exactly one distinct fingerprint | 25,556 | 9,325 |
+| Repeated key → exactly one distinct fingerprint | 0 | 0 |
+| Same key → >1 distinct fingerprint | 4 | 3 |
+| Keys appearing across >1 sourceResource | 4 | 3 |
+| Same-resource keys with >1 definition | 0 | 0 |
+| MapKey-origin occurrences | 13,741 | 11,553 |
+| UUID-origin occurrences | 0 | 0 |
+| Name / fallback-origin occurrences | 0 | 0 |
+| Occurrences under conflicting keys | 14 | 12 |
+
+Fingerprint distribution：all GameObjects 有 25,556 keys × 1 fingerprint、4 keys × 2 fingerprints；native items 有 9,325 × 1、3 × 2。Definition-count distribution 完全相同；沒有 >2 fingerprints 或跨 resource 同 key 同 fingerprint 的重複 case。
+
+「Duplicate MapKey occurrence」有兩種不同計數：definition 層額外 repeated-key rows 是上表的 4／3；localization 層中，一個 key 本來就能有多個欄位，不能當 collision。All GameObjects 有 9,654 keys 帶 localization、3,551 keys 帶 >1 localization occurrence，扣掉每個 key 的第一 occurrence 後剩 4,087；native items 對應 7,587、3,430、3,966。沒有 localization 的 keys 分別為 15,906／1,741，仍保留於完整 conflict universe。
+
+### Cross-resource competing definitions
+
+4 個 conflicting keys 全部各有兩個不同 sourceResource、兩個不同 fingerprints；native type 一致，分別是 3 item／1 character。Module-pair aggregates：Gustav↔Shared 2、Gustav↔GustavDev 1、Shared↔SharedDev 1。它們跨 module 的分布與 override／alternate definition 相容，但沒有足夠 public load-order／active-definition evidence 判定 winner，也不能排除錯誤 reuse／不同物件撞 key，因此不宣告已證明 patch 或同一 gameplay object。
+
+全部四組的 native Name 與 Stats fields（含缺席狀態）相同；只有一組 ParentTemplateId 相同，只有兩組 DisplayName 相同，三組 Description 相同。全部 nested children projection 都不同。直接 changed-field aggregates 包含 `_OriginalFileVersion_` 4、ParentTemplateId 3、Icon 3、DisplayName 2、Description 1、TechnicalDescription 1，另有 gameplay／visual fields。差異不只是 provenance path 或 formatting；不能以「名稱相同」或「localization 看起來一致」豁免 whole-definition conflict。
+
+本輪沒有套用 package/module priority、first/last winner 或縮減 fingerprint。即使將來能證明是 patch，同 key differing retained definitions 仍必須 fail closed，直到另一個經驗收的 public structural policy 能安全處理。
+
+### Localization relation 與 role gate
+
+獨立逐 XML element 檢查最近 enclosing `GameObjects` boundary，再核對 MapKey、sourceResource、whole-definition fingerprint、handle/version、field role 與 occurrence multiplicity。全部 13,741 occurrences 精確對上 public ledger；全部 storage type 為 `TranslatedString`。Nested identity 欄位不會覆寫 enclosing boundary binding。
+
+| Field role | All GameObjects occurrences | Native item occurrences | Item placement |
+|---|---:|---:|---|
+| DisplayName | 9,450 | 7,436 | direct |
+| Description | 3,445 | 3,375 | direct |
+| DisplayNameAlchemy | 83 | 83 | direct |
+| OnUseDescription | 222 | 222 | direct |
+| TechnicalDescription | 145 | 145 | direct |
+| ShortDescription | 3 | 3 | direct |
+| UnknownDescription | 58 | 58 | direct |
+| UnknownDisplayName | 21 | 21 | direct |
+| GameMasterSpawnSubSection | 260 | 210 | nested |
+| Title | 54 | 0 | character only |
+| Tooltip | 0 | 0 | not observed |
+
+同一 verified native item MapKey、同一完整 definition 的直接 DisplayName／Description 等表中 direct roles，可以視為同一 template 的相關 localization fields。這只證明結構歸屬，不宣告所有字串互相同義、同一 MapKey 等於同一 spawned instance，或任何 subtree handle 都適合作為 item prompt context。
+
+`GameMasterSpawnSubSection` 位於該 definition 的 nested `GameMaster` node，雖有結構上的 subtree 歸屬，本 proposal 不把這個 category role 當 item text。排除此 role 後，native item direct localization occurrences 為 11,343，含 10 個落在 conflicting keys 的 occurrences；這些 conflicting keys 必須整組排除。其他類型的 DisplayName／Title 不因 exporter 使用 `kind="item"` 而變成 item evidence。
+
+按 MapKey 合併 roles 的描述性分布（尚未排除 conflict）如下：all GameObjects 為 single-field 6,104／multi-field 3,550；native items 為 4,157／3,430；native item direct roles only 為 4,154／3,410（7,564 localized keys）。Same key 的 competing definitions 可能有不同欄位集合，上述 aggregate 不代表已通過 P1 的 production context coverage。
+
+### Determinism、public reproduction 與版本限制
+
+P1.5 兩次最終 run 的 definition ledger、occurrence ledger、summary 都逐 byte 相同；因此所有 definition 的 MapKey extraction 完全一致。本輪從安裝重新生成的全部 template rows 亦相同。這證明 deterministic extraction 及本 snapshot 的重建一致性，不能單獨證明跨 build stability 或 semantic identity。
+
+MapKey 可完全由使用者自己的 BG3 install、公開 LSLib backend 與 repository public parser 重建；private artifact required = NO，publicly reconstructible = YES。先設定公開 backend，再以使用者自己的路徑執行：
+
+```powershell
+$env:PYTHONUTF8 = '1'
+python -m bg3loc research scan --game-dir $gameDir --output $scanFile
+python -m bg3loc research export-provenance --scan $scanFile --output-dir $firstOutput
+python -m bg3loc research export-provenance --scan $scanFile --output-dir $secondOutput
+```
+
+可重現的 audit 計算：在 definition ledger 篩 `definitionType=GameObjectTemplate`，依原始 `entityIdentity` group，分別計算 row count、distinct `sourceResource` count、distinct `definitionFingerprint` count；occurrence ledger 用完整 identity/origin/resource/fingerprint binding join。Native Type／直接 field placement 目前不在 public JSONL row 中，需由同一 raw scan+discovery 選入的 archive resources，經 `ArchiveBackend.extract_single_file`／`convert_resource` 和 `parse_structural_xml` 重新核對；讀每個 GameObjects 的直接 MapKey／Type，保留完整 payload 作 fingerprint，逐 element 檢查最近 boundary。不能只靠現有 ledger 的 `definitionType` 宣告 native item，或依 field name 猜 direct placement。
+
+Audit grouping 不需要英文 localized source text，也沒有使用文字相似度、LLM 判斷或 private retained research。完整 raw payload／identity lists／本機路徑及 one-off analysis outputs 留在 ignored workspace，沒有提交。公開 implementation links 於 audit 日期核對；不以網路文件的其他 corpus counts 代替本次實測。
+
+**Cross-version stability = NOT VERIFIED**。本輪只有目前安裝 snapshot 與同內容的 P1.5 runs，沒有可重現的另一 historical build 作比較。MapKey 建議僅作 snapshot-scoped template identity；更新遊戲、mod 或選入 resource universe 後必須重建並重新驗證 definitions／provenance／fingerprints，不沿用跨 build identity cache 或 context。
+
+### P1 item policy proposal（未實作）
+
+建議將 reliable item identity 擴充為 existing explicit template UUID **或 verified native GameObjects MapKey + no structural conflict**。Verified MapKey 的條件：
+
+1. 公開 raw source 證明它是 RootTemplates 中 enclosing GameObjects definition 的唯一非空直接 MapKey，並保留 native origin；不能將任何 GUID-like string 重新標成 UUID origin，不能接受 Name、fallback、nested MapKey 或 parent/reference IDs。
+2. 以原始直接 `Type=item` 證明 item scope；同 key 的全部 retained GameObjects definitions 仍一起參與 conflict check，不能先過濾掉非 item 或無 localization definitions 來隱藏衝突。缺少 type proof 時不接納 item evidence。
+3. 全部 retained definitions 的完整 fingerprints 必須一致且 provenance 完整；有不同 fingerprint、ambiguous native field／type 或不完整 definition universe 時整個 key 不提供 context。不發明 active winner，也不以相同 English text 或同 localization role set 消除衝突。
+4. Localization occurrence 必須證明直接屬於該 item boundary，只接受本 audit 已驗證的 direct roles；nested category metadata 或未驗證 role 不因共用 key 自動獲准。Direct placement proof 不能只由目前 ledger 的 `fieldRole` 名稱推出。
+5. Scope 是當前 source snapshot 的 template；保留 P1 其餘 English source join、conflict、budget、ordering 等 gates。新 identity kind／adapter 和 type/placement proof 的 public transport 仍是後續明確 policy adoption／integration 工作，不在本輪變更。
+
+現行 P1 仍 UUID-only，production item same-entity context coverage 仍為 0。本 audit 提供可安全採用的 policy proposal，沒有建置 production adapter，沒有承諾實際 context coverage。P2 可恢復處理上述 policy adoption 與 public proof integration；在條件被實作及驗收前，MapKey item context 保持 disabled。
+
+### Validation 與停止狀態
+
+本輪 tracked change 只有本 audit 文件。無 runtime／schema／synthetic test change；未修改 production prepare、P1 contract、prompt/provider，未開始 P2、P3 或 B1-03。Full regression 在 Windows `PYTHONUTF8=1` 與 ignored workspace basetemp 下執行 `python -m pytest -q`：`642 passed, 75 subtests passed, 0 warnings`。
+
+```text
+Item MapKey Reliability = CONDITIONAL
+B1-02 P1.6 = ACCEPTED
+P2 Prepare Integration = READY TO RESUME
+P1 item policy change = PROPOSAL ONLY / NOT IMPLEMENTED
+Current production item context = DISABLED (UUID-origin coverage 0)
+P3 = NOT STARTED
+B1-03 = NOT STARTED
+```
+
+本節取代 P1.5 停止狀態中未處理 item identity policy 的解讀；READY TO RESUME 表示可以安全續做受上述條件約束的後續工作，不表示 policy 已放寬或 P2 已開始。本輪在 audit、aggregate、decision、proposal、docs 與 regression 完成後停止。
