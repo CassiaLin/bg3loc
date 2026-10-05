@@ -249,7 +249,8 @@ def test_public_map_key_output_requires_raw_native_type_proof(template_type, all
     write_structural_provenance(tmp_path, [definition])
     rows = read_rows(tmp_path / "structural-occurrences.jsonl")
     assert all(row["identityOrigin"] == "MAP_KEY" for row in rows)
-    assert all("templateType" not in row for row in rows)
+    assert all(row["templateType"] == template_type and row["identityIsNative"]
+               and row["fieldIsDirect"] for row in rows)
     records = [adapt_verified_map_key(row, definition) for row in rows]
     target = next(row for row in records if row.content_uid == UID)
     result = build_same_entity_context(target, records)
@@ -277,6 +278,30 @@ def test_nested_uuid_and_category_do_not_replace_public_root_map_key(tmp_path):
     assert built is not None and {field.field_role for field in built.related_fields} == {"Description"}
     assert all(row.identity_kind == Kind.TEMPLATE_MAP_KEY for row in records)
     assert build_same_entity_context(replace(target, identity_kind=Kind.TEMPLATE_UUID), records).absence_reason == ContextAbsenceReason.NO_RELIABLE_IDENTITY
+
+
+@pytest.mark.parametrize("native,extra,expected_type,expected_native", [
+    ("MapKey", '<attribute id="Type" value="item"/>', "item", True),
+    ("Key", '<attribute id="Type" value="item"/>', "item", False),
+    ("Name", '<attribute id="Type" value="item"/>', "item", False),
+    ("MapKey", '<children><node id="Item"><attribute id="Type" value="item"/></node></children>', "", True),
+    ("MapKey", '<attribute id="Type" value="item"/><attribute id="Type" value="character"/>', "", True),
+])
+def test_public_native_metadata_is_direct_and_unambiguous(native, extra, expected_type, expected_native):
+    source = xml(identity_field=native, identity="FictionalRootKey", extra=extra)
+    definition = parse_structural_xml(source)[0]
+    assert definition.to_dict()["templateType"] == expected_type
+    assert definition.to_dict()["identityIsNative"] is expected_native
+    assert all(row["fieldIsDirect"] for row in definition.occurrence_rows())
+
+
+def test_public_nested_localized_field_cannot_claim_direct_proof():
+    source = xml(identity_field="MapKey", identity="FictionalRootKey", extra=(
+        '<attribute id="Type" value="item"/><children><node id="Item">'
+        '<attribute id="Description" handle="haaaaaaaagbbbbgccccgddddgeeeeeeeeeeee"/>'
+        '</node></children>'))
+    rows = parse_structural_xml(source)[0].occurrence_rows()
+    assert [row["fieldIsDirect"] for row in rows] == [True, True, False]
 
 
 def test_public_map_key_conflict_retains_definition_without_localization(tmp_path):
