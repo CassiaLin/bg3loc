@@ -1,0 +1,73 @@
+{
+  "capturedFromHead": "940ff61759fae219724d9ad95ae46617cd283e38",
+  "request": {
+    "content_uid": "fictional-frost-target",
+    "batch_id": "skill_spell-0001",
+    "attempt_number": 1,
+    "input_hash": "fictional-execution-hash",
+    "source_text": "Frost Spark {TARGET}",
+    "primary_category": "skill_spell",
+    "canonical_group_key": "stat:public/fictional/spells|skill_frostspark",
+    "context_group_keys": [
+      "stat:public/fictional/spells|skill_frostspark",
+      "path:public/fictional"
+    ],
+    "protected_tokens": [
+      "{TARGET}"
+    ]
+  },
+  "ruleset": {
+    "version": "fictional-p3-v1",
+    "common_rules": [
+      "Preserve meaning.",
+      "Preserve protected tokens exactly."
+    ],
+    "category_rules": {
+      "skill_spell": [
+        "Use concise ability wording."
+      ],
+      "item": [
+        "Use stable item naming."
+      ],
+      "quest": [
+        "Use clear journal wording."
+      ]
+    },
+    "source_locale": "English",
+    "target_locale": "ChineseTraditional",
+    "glossary": [
+      {
+        "source": "spark",
+        "target": "火花"
+      }
+    ]
+  },
+  "system": "Translate the supplied Baldur's Gate 3 localization text from English to ChineseTraditional.\nReturn only the translated text. Do not add explanations, labels, or quotation marks.\n\nRules:\n- Preserve meaning.\n- Preserve protected tokens exactly.\n- Use concise ability wording.\n\nGlossary:\n- spark => 火花\n\nProtected runtime tokens (preserve exactly):\n- {TARGET}",
+  "user": "{\"ContentUid\":\"fictional-frost-target\",\"contextGroupKeys\":[\"stat:public/fictional/spells|skill_frostspark\",\"path:public/fictional\"],\"primaryCategory\":\"skill_spell\",\"sourceText\":\"Frost Spark {TARGET}\"}",
+  "effectivePromptHash": "1e3bc4f371833c4af0f6b9acaa8bec6e2339861ee4be5ac59ed17b42a0f755ad",
+  "chatMessagesFingerprint": "947b5aeb0665f4e6aab8a567521ff9f1f0715d0c2a45a42d188fa2114e4ebd0a",
+  "httpCall": {
+    "url": "https://example.test/v1/chat/completions",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "payload": {
+      "model": "fictional-model",
+      "messages": [
+        {
+          "role": "system",
+          "content": "Translate the supplied Baldur's Gate 3 localization text from English to ChineseTraditional.\nReturn only the translated text. Do not add explanations, labels, or quotation marks.\n\nRules:\n- Preserve meaning.\n- Preserve protected tokens exactly.\n- Use concise ability wording.\n\nGlossary:\n- spark => 火花\n\nProtected runtime tokens (preserve exactly):\n- {TARGET}"
+        },
+        {
+          "role": "user",
+          "content": "{\"ContentUid\":\"fictional-frost-target\",\"contextGroupKeys\":[\"stat:public/fictional/spells|skill_frostspark\",\"path:public/fictional\"],\"primaryCategory\":\"skill_spell\",\"sourceText\":\"Frost Spark {TARGET}\"}"
+        }
+      ],
+      "stream": false,
+      "max_tokens": 64,
+      "temperature": 0.25
+    },
+    "timeout_seconds": 12.5
+  },
+  "httpBodyUtf8": "{\"model\": \"fictional-model\", \"messages\": [{\"role\": \"system\", \"content\": \"Translate the supplied Baldur's Gate 3 localization text from English to ChineseTraditional.\\nReturn only the translated text. Do not add explanations, labels, or quotation marks.\\n\\nRules:\\n- Preserve meaning.\\n- Preserve protected tokens exactly.\\n- Use concise ability wording.\\n\\nGlossary:\\n- spark => 火花\\n\\nProtected runtime tokens (preserve exactly):\\n- {TARGET}\"}, {\"role\": \"user\", \"content\": \"{\\\"ContentUid\\\":\\\"fictional-frost-target\\\",\\\"contextGroupKeys\\\":[\\\"stat:public/fictional/spells|skill_frostspark\\\",\\\"path:public/fictional\\\"],\\\"primaryCategory\\\":\\\"skill_spell\\\",\\\"sourceText\\\":\\\"Frost Spark {TARGET}\\\"}\"}], \"stream\": false, \"max_tokens\": 64, \"temperature\": 0.25}"
+}

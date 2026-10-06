@@ -142,7 +142,8 @@ def test_public_prepare_policy_inventory_and_isolation(tmp_path):
         claim = ClaimedAttempt(1, 'fictional-read-only', handle, row['batchId'], 1, 'fictional-hash', 'fixture', '')
         request_row = resolver.resolve(claim)
         assert request_row.source_text == row['sourceText']
-        assert not hasattr(request_row, 'same_entity_context')
+        expected_context = context_from_material(row)
+        assert request_row.same_entity_context == expected_context
     assert build_production_completion_view(binding.database, binding.batch_plan).total == len(rows)
     assert material_rows(request.output_dir) == rows
 
