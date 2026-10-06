@@ -1,0 +1,21 @@
+{
+  "capturedFromHead": "5d450b0361d48e48cb9b162761204340926d14eb",
+  "row": {
+    "contentUid": "fictional-frost-target",
+    "sourceText": "Frost Spark {TARGET}",
+    "primaryCategory": "skill_spell",
+    "batchId": "skill_spell-0001",
+    "contextGroupKeys": [
+      "stat:public/fictional/spells|skill_frostspark",
+      "path:public/fictional"
+    ]
+  },
+  "parameters": {
+    "prompt_version": "fictional-p3-v1",
+    "ruleset_fingerprint": "bc7328511d3cc909cf258079f67a2e0401a1fe46b081fb17314af01734ccf37c",
+    "source_locale": "English",
+    "target_locale": "ChineseTraditional"
+  },
+  "inputHash": "c8813418c5c77f1fef21f70044cf846492efcf9d7a0722d9601a719dc692c0ba",
+  "executionConfigHash": "971a67d6f0fb17be44f9c746d97a8b9663f66c99a18beb9669f2f1b3722a11a0"
+}

@@ -253,6 +253,7 @@ def test_production_safety_changes_hashes_only_when_context_present(monkeypatch)
 def test_corrupt_material_fails_worker_before_provider_callback(tmp_path, mutation):
     request = with_context()
     plan, path, row = material_fixture(tmp_path, request)
+    _, items = load_execution_items(plan, prompt_version='fictional-p3-v1')
     context = row['sameEntityContext']
     if mutation in ('uid', 'category', 'source_hash'):
         key = {'uid': 'contentUid', 'category': 'category', 'source_hash': 'sourceTextSha256'}[mutation]
@@ -269,7 +270,6 @@ def test_corrupt_material_fails_worker_before_provider_callback(tmp_path, mutati
     resolver = BatchMaterialResolver(plan)
     with pytest.raises((RuntimeError, ValueError)):
         resolver.resolve(claim(request))
-    _, items = load_execution_items(plan, prompt_version='fictional-p3-v1')
     store = TranslationExecutionStore(tmp_path / 'execution.sqlite3')
     store.initialize()
     store.seed_items(items, updated_at='fixture')

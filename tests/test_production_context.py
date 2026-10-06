@@ -190,7 +190,10 @@ def test_absent_bytes_and_legacy_execution_hashes_unchanged(tmp_path):
     def inventory(output):
         with sqlite3.connect(output / 'execution.sqlite3') as conn:
             return conn.execute('SELECT content_uid,batch_id,input_hash FROM content_state ORDER BY content_uid').fetchall()
-    assert inventory(request.output_dir) == inventory(legacy.output_dir)
+    baseline_inventory = {uid: (batch, digest) for uid, batch, digest in inventory(legacy.output_dir)}
+    for uid, batch, digest in inventory(request.output_dir):
+        assert batch == baseline_inventory[uid][0]
+        assert (digest != baseline_inventory[uid][1]) == ('sameEntityContext' in material_rows(request.output_dir)[uid])
     verify_production_workspace(legacy.output_dir)
 
 
