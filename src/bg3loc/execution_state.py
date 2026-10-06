@@ -4,10 +4,11 @@ from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 import sqlite3
+import re
 from typing import Iterable
 
 
-EXECUTION_SCHEMA_VERSION = "1.1"
+EXECUTION_SCHEMA_VERSION = "1.2"
 
 STATUS_PENDING = "pending"
 STATUS_RUNNING = "running"
@@ -136,6 +137,9 @@ class TranslationExecutionStore:
             ):
                 if column not in attempt_columns:
                     conn.execute(f"ALTER TABLE attempts ADD COLUMN {column} INTEGER")
+            for column in ("context_fingerprint", "effective_prompt_hash", "chat_messages_fingerprint", "prompt_renderer_version"):
+                if column not in attempt_columns:
+                    conn.execute(f"ALTER TABLE attempts ADD COLUMN {column} TEXT")
             conn.execute(
                 "INSERT OR REPLACE INTO metadata(key, value) VALUES('schemaVersion', ?)",
                 (EXECUTION_SCHEMA_VERSION,),
@@ -637,6 +641,26 @@ class TranslationExecutionStore:
             ).fetchall()
             return [dict(row) for row in rows]
 
+    def record_prompt_provenance(self, *, attempt_id: int, worker_id: str, input_hash: str,
+                                context_fingerprint: str | None, effective_prompt_hash: str,
+                                chat_messages_fingerprint: str, prompt_renderer_version: str | None) -> None:
+        for value in (context_fingerprint, effective_prompt_hash, chat_messages_fingerprint):
+            if value is not None and (not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None):
+                raise ValueError("invalid prompt provenance fingerprint")
+        if not effective_prompt_hash or not chat_messages_fingerprint:
+            raise ValueError("actual prompt and messages provenance required")
+        values = (context_fingerprint, effective_prompt_hash, chat_messages_fingerprint, prompt_renderer_version)
+        with closing(self.connect()) as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
+            attempt, state = self._load_attempt_and_state(conn, attempt_id)
+            self._assert_live_owner(attempt, state, worker_id)
+            if input_hash != attempt["input_hash"] or input_hash != state["input_hash"]:
+                raise ValueError("attempt input identity mismatch")
+            previous = tuple(attempt[name] for name in ("context_fingerprint", "effective_prompt_hash", "chat_messages_fingerprint", "prompt_renderer_version"))
+            if any(value is not None for value in previous) and previous != values:
+                raise ValueError("attempt prompt provenance is already bound")
+            conn.execute("UPDATE attempts SET context_fingerprint=?,effective_prompt_hash=?,chat_messages_fingerprint=?,prompt_renderer_version=? WHERE attempt_id=?", (*values, attempt_id))
+
     @staticmethod
     def _load_attempt_and_state(
         conn: sqlite3.Connection,
@@ -670,6 +694,8 @@ class TranslationExecutionStore:
             raise ValueError(f"worker does not own lease for {attempt['content_uid']}")
         if int(state["last_attempt_id"] or 0) != int(attempt["attempt_id"]):
             raise ValueError(f"attempt is not current for {attempt['content_uid']}")
+        if state["input_hash"] != attempt["input_hash"]:
+            raise ValueError("attempt input identity is no longer current")
 
 
 def _validate_usage(*values: int | None) -> None:

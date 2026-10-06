@@ -14,6 +14,23 @@ QA_STATUS_CHECKED = "checked"
 QA_STATUS_STALE = "stale"
 
 
+def input_binding_current(recorded: str | None, current: str, *, required: bool = False) -> bool:
+    return recorded == current if recorded is not None else not required
+
+
+def requires_input_binding(conn: sqlite3.Connection) -> bool:
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='metadata'").fetchone() is None:
+        return False
+    return conn.execute("SELECT 1 FROM metadata WHERE key='executionContextContractFingerprint' AND value!=''").fetchone() is not None
+
+
+def stored_input_binding_expression(conn: sqlite3.Connection, table: str, alias: str = "") -> str:
+    if table not in {"qa_results", "qa_review_resolutions"} or alias not in {"", "q."}:
+        raise ValueError("unsupported binding table")
+    columns = {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})")}
+    return alias + "execution_input_hash" if "execution_input_hash" in columns else "NULL"
+
+
 @dataclass(frozen=True, slots=True)
 class StoredQaResult:
     content_uid: str
@@ -25,6 +42,7 @@ class StoredQaResult:
     output_hash: str
     checked_at: str
     issues: tuple[dict[str, object], ...]
+    execution_input_hash: str | None = None
 
 
 class TranslationQaStore:
@@ -97,17 +115,23 @@ class TranslationQaStore:
                     ON qa_rejected_candidates(content_uid, rejection_id);
                 """
             )
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(qa_results)")}
+            if "execution_input_hash" not in columns:
+                conn.execute("ALTER TABLE qa_results ADD COLUMN execution_input_hash TEXT")
 
     def record_result(
         self,
         result: QaResult,
         *,
         checked_at: str,
+        expected_input_hash: str | None = None,
+        expected_output_hash: str | None = None,
     ) -> None:
         with closing(self.connect()) as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
             state = conn.execute(
                 """
-                SELECT output_hash, translated_text
+                SELECT output_hash, translated_text, input_hash, status
                 FROM content_state
                 WHERE content_uid = ?
                 """,
@@ -115,6 +139,12 @@ class TranslationQaStore:
             ).fetchone()
             if state is None:
                 raise ValueError(f"unknown ContentUid: {result.content_uid}")
+            if requires_input_binding(conn) and expected_input_hash is None:
+                raise ValueError("context workspace QA requires an evaluated input snapshot")
+            if expected_input_hash is not None and expected_input_hash != state["input_hash"]:
+                raise ValueError("QA candidate input changed during evaluation")
+            if expected_output_hash is not None and expected_output_hash != state["output_hash"]:
+                raise ValueError("QA candidate output changed during evaluation")
 
             output_hash = str(state["output_hash"] or "")
             translated_text = state["translated_text"]
@@ -122,19 +152,22 @@ class TranslationQaStore:
                 raise ValueError(
                     f"ContentUid has no completed translation output: {result.content_uid}"
                 )
+            if str(state["status"]) != "succeeded":
+                raise ValueError("QA candidate input is no longer succeeded")
 
             conn.execute(
                 """
                 INSERT INTO qa_results(
                     content_uid, route, qa_rule_set_version,
-                    qa_input_hash, output_hash, checked_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    qa_input_hash, output_hash, checked_at, execution_input_hash
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(content_uid) DO UPDATE SET
                     route = excluded.route,
                     qa_rule_set_version = excluded.qa_rule_set_version,
                     qa_input_hash = excluded.qa_input_hash,
                     output_hash = excluded.output_hash,
-                    checked_at = excluded.checked_at
+                    checked_at = excluded.checked_at,
+                    execution_input_hash = excluded.execution_input_hash
                 """,
                 (
                     result.content_uid,
@@ -143,6 +176,7 @@ class TranslationQaStore:
                     result.qa_input_hash,
                     output_hash,
                     checked_at,
+                    str(state["input_hash"]),
                 ),
             )
             conn.execute(
@@ -188,7 +222,7 @@ class TranslationQaStore:
         with closing(self.connect()) as conn, conn:
             state = conn.execute(
                 """
-                SELECT status, translated_text, output_hash
+                SELECT status, translated_text, output_hash, input_hash
                 FROM content_state
                 WHERE content_uid = ?
                 """,
@@ -205,7 +239,7 @@ class TranslationQaStore:
 
             stored = conn.execute(
                 """
-                SELECT qa_input_hash, output_hash
+                SELECT qa_input_hash, output_hash, execution_input_hash
                 FROM qa_results
                 WHERE content_uid = ?
                 """,
@@ -217,6 +251,8 @@ class TranslationQaStore:
                 raise ValueError(f"QA result hash mismatch: {result.content_uid}")
             if str(stored["output_hash"]) != output_hash:
                 raise ValueError(f"QA result is stale: {result.content_uid}")
+            if not input_binding_current(stored["execution_input_hash"], str(state["input_hash"]), required=requires_input_binding(conn)):
+                raise ValueError("QA input identity is stale")
 
             issues_json = json.dumps(
                 [
@@ -282,8 +318,9 @@ class TranslationQaStore:
         current_rule_set_version: str | None = None,
     ) -> StoredQaResult | None:
         with closing(self.connect()) as conn:
+            binding_column = stored_input_binding_expression(conn, "qa_results", "q.")
             row = conn.execute(
-                """
+                f"""
                 SELECT
                     q.content_uid,
                     q.route,
@@ -291,7 +328,8 @@ class TranslationQaStore:
                     q.qa_input_hash,
                     q.output_hash AS qa_output_hash,
                     q.checked_at,
-                    c.output_hash AS current_output_hash
+                    c.output_hash AS current_output_hash,
+                    c.input_hash AS current_input_hash, {binding_column} AS execution_input_hash
                 FROM qa_results AS q
                 JOIN content_state AS c USING(content_uid)
                 WHERE q.content_uid = ?
@@ -302,6 +340,7 @@ class TranslationQaStore:
                 return None
 
             stale = str(row["qa_output_hash"]) != str(row["current_output_hash"] or "")
+            stale |= not input_binding_current(row["execution_input_hash"], str(row["current_input_hash"]), required=requires_input_binding(conn))
             if (
                 current_rule_set_version is not None
                 and str(row["qa_rule_set_version"]) != current_rule_set_version
@@ -338,6 +377,7 @@ class TranslationQaStore:
                 output_hash=str(row["qa_output_hash"]),
                 checked_at=str(row["checked_at"]),
                 issues=issues,
+                execution_input_hash=row["execution_input_hash"],
             )
 
     def list_by_route(
@@ -347,8 +387,9 @@ class TranslationQaStore:
         current_rule_set_version: str | None = None,
     ) -> list[StoredQaResult]:
         with closing(self.connect()) as conn:
+            binding_column = stored_input_binding_expression(conn, "qa_results", "q.")
             rows = conn.execute(
-                """
+                f"""
                 SELECT
                     q.content_uid,
                     q.route,
@@ -357,6 +398,7 @@ class TranslationQaStore:
                     q.output_hash AS qa_output_hash,
                     q.checked_at,
                     c.output_hash AS current_output_hash,
+                    c.input_hash AS current_input_hash, {binding_column} AS execution_input_hash,
                     i.ordinal,
                     i.issue_code,
                     i.severity,
@@ -371,6 +413,7 @@ class TranslationQaStore:
                 """,
                 (route,),
             ).fetchall()
+            bound_required = requires_input_binding(conn)
 
         grouped: dict[str, list[sqlite3.Row]] = {}
         for row in rows:
@@ -382,6 +425,7 @@ class TranslationQaStore:
             stale = str(first["qa_output_hash"]) != str(
                 first["current_output_hash"] or ""
             )
+            stale |= not input_binding_current(first["execution_input_hash"], str(first["current_input_hash"]), required=bound_required)
             if (
                 current_rule_set_version is not None
                 and str(first["qa_rule_set_version"]) != current_rule_set_version
@@ -409,6 +453,7 @@ class TranslationQaStore:
                     output_hash=str(first["qa_output_hash"]),
                     checked_at=str(first["checked_at"]),
                     issues=issues,
+                    execution_input_hash=first["execution_input_hash"],
                 )
             )
         return results

@@ -172,7 +172,20 @@ def run_worker(
             else:
                 try:
                     last_request_started = monotonic()
-                    outcome = provider(request)
+                    # A per-call callback avoids shared mutable "current attempt"
+                    # state when provider instances are shared by workers.
+                    send = getattr(type(provider), "translate_with_provenance", None)
+                    if send is None:
+                        outcome = provider(request)
+                    else:
+                        def record(provenance, current_claim=claim):
+                            store.record_prompt_provenance(attempt_id=current_claim.attempt_id,
+                                worker_id=worker_id, input_hash=provenance.input_hash,
+                                context_fingerprint=provenance.context_fingerprint,
+                                effective_prompt_hash=provenance.effective_prompt_hash,
+                                chat_messages_fingerprint=provenance.chat_messages_fingerprint,
+                                prompt_renderer_version=provenance.prompt_renderer_version)
+                        outcome = send(provider, request, record)
                 except Exception as exc:
                     outcome = TranslationFailure(
                         error_code="PROVIDER_EXCEPTION",

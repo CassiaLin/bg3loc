@@ -7,7 +7,7 @@ from pathlib import Path
 import sqlite3
 
 from bg3loc.qa import QA_ROUTE_REVIEW, QA_RULESET_VERSION
-from bg3loc.qa_state import QA_STATUS_CHECKED, TranslationQaStore
+from bg3loc.qa_state import QA_STATUS_CHECKED, TranslationQaStore, input_binding_current, requires_input_binding, stored_input_binding_expression
 
 
 REVIEW_DECISION_ACCEPT = "ACCEPT"
@@ -65,6 +65,8 @@ class ProductionReviewStore:
                     ON qa_review_resolutions(content_uid, resolution_id);
                 """
             )
+            if stored_input_binding_expression(conn, "qa_review_resolutions") == "NULL":
+                conn.execute("ALTER TABLE qa_review_resolutions ADD COLUMN execution_input_hash TEXT")
 
     def resolve(
         self,
@@ -100,7 +102,7 @@ class ProductionReviewStore:
 
         with closing(self.connect()) as conn, conn:
             state = conn.execute(
-                "SELECT status, translated_text, output_hash FROM content_state WHERE content_uid = ?",
+                "SELECT status, translated_text, output_hash, input_hash FROM content_state WHERE content_uid = ?",
                 (content_uid,),
             ).fetchone()
             if state is None:
@@ -113,6 +115,8 @@ class ProductionReviewStore:
                 raise ValueError(f"ContentUid has no completed output: {content_uid}")
             if qa.output_hash != current_hash:
                 raise ValueError(f"QA result is stale: {content_uid}")
+            if not input_binding_current(qa.execution_input_hash, str(state["input_hash"]), required=requires_input_binding(conn)):
+                raise ValueError("review input identity is stale")
 
             duplicate = conn.execute(
                 """
@@ -123,6 +127,7 @@ class ProductionReviewStore:
                   AND qa_rule_set_version = ?
                   AND qa_input_hash = ?
                   AND base_output_hash = ?
+                  AND execution_input_hash = ?
                 ORDER BY resolution_id DESC
                 LIMIT 1
                 """,
@@ -132,6 +137,7 @@ class ProductionReviewStore:
                     qa.qa_rule_set_version,
                     qa.qa_input_hash,
                     current_hash,
+                    str(state["input_hash"]),
                 ),
             ).fetchone()
             if duplicate is not None:
@@ -157,12 +163,13 @@ class ProductionReviewStore:
                 """
                 INSERT INTO qa_review_resolutions(
                     content_uid, decision, qa_rule_set_version, qa_input_hash,
-                    base_output_hash, resolved_output_hash, reviewer, note, resolved_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    base_output_hash, resolved_output_hash, reviewer, note, resolved_at, execution_input_hash
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     content_uid, decision, qa.qa_rule_set_version, qa.qa_input_hash,
                     current_hash, resolved_hash, reviewer.strip(), note, resolved_at,
+                    str(state["input_hash"]),
                 ),
             )
             resolution_id = int(cursor.lastrowid)
@@ -209,6 +216,10 @@ class ProductionReviewStore:
                 ),
             ).fetchone()
             if row is None:
+                return None
+            state = conn.execute("SELECT input_hash FROM content_state WHERE content_uid=?", (content_uid,)).fetchone()
+            recorded = row["execution_input_hash"] if "execution_input_hash" in row.keys() else None
+            if state is None or not input_binding_current(recorded, str(state["input_hash"]), required=requires_input_binding(conn)):
                 return None
             return StoredReviewResolution(
                 resolution_id=int(row["resolution_id"]),

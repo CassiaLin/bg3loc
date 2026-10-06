@@ -9,7 +9,9 @@ import socket
 from typing import Callable, Mapping, Protocol
 from urllib import error, request
 
-from bg3loc.chat_prompt import render_chat_messages
+from bg3loc.chat_prompt import render_chat_messages, chat_messages_fingerprint
+from bg3loc.prompt_provenance import PromptProvenance
+from bg3loc import prompt_assembly
 from bg3loc.execution_runner import (
     ProviderTokenUsage,
     TranslationFailure,
@@ -79,6 +81,7 @@ class OpenAICompatibleChatConfig:
 def openai_compatible_execution_config_hash(
     config: OpenAICompatibleChatConfig,
     ruleset: TranslationRuleSet,
+    *, context_contract: dict | None = None,
 ) -> str:
     payload = {
         "provider": "openai-compatible",
@@ -90,6 +93,8 @@ def openai_compatible_execution_config_hash(
         "rulesetFingerprint": ruleset.fingerprint(),
         "rulesetVersion": ruleset.version,
     }
+    if context_contract is not None:
+        payload["executionContextContract"] = context_contract
     raw = json.dumps(
         payload,
         ensure_ascii=False,
@@ -114,6 +119,10 @@ class OpenAICompatibleChatProvider:
         self.clock = clock or (lambda: datetime.now(timezone.utc))
 
     def __call__(self, translation_request: TranslationRequest) -> TranslationOutcome:
+        return self.translate_with_provenance(translation_request, None)
+
+    def translate_with_provenance(self, translation_request: TranslationRequest,
+                                  before_send: Callable[[PromptProvenance], None] | None) -> TranslationOutcome:
         if not self.config.base_url.strip():
             return TranslationFailure(
                 error_code="PROVIDER_CONFIG_INVALID",
@@ -155,6 +164,19 @@ class OpenAICompatibleChatProvider:
             headers["Authorization"] = f"Bearer {self.config.api_key}"
 
         url = self.config.base_url.rstrip("/") + "/v1/chat/completions"
+
+        # Render exactly once. Bind the same messages about to enter transport,
+        # before network errors can occur; never store their source text here.
+        if before_send is not None:
+            try:
+                context = translation_request.same_entity_context
+                before_send(PromptProvenance(translation_request.input_hash,
+                    context.context_fingerprint if context is not None else None,
+                    assembled.effective_prompt_hash, chat_messages_fingerprint(messages),
+                    prompt_assembly.SAME_ENTITY_PROMPT_VERSION if context is not None else None))
+            except Exception as exc:
+                return TranslationFailure(error_code="PROMPT_PROVENANCE_ERROR",
+                    error_message=f"{type(exc).__name__}: {exc}", retryable=False)
 
         try:
             transport_result = self.transport.post_json(

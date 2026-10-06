@@ -26,6 +26,7 @@ from bg3loc.production_workspace import (
     verify_production_workspace,
 )
 from bg3loc.qa import QA_ROUTE_FAIL, QA_ROUTE_PASS, QA_ROUTE_RETRY, QA_ROUTE_REVIEW, QA_RULESET_VERSION
+from bg3loc.qa_state import stored_input_binding_expression, requires_input_binding
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,13 +65,15 @@ def _read_counts(binding: ProductionWorkspaceBinding) -> tuple[dict[str, int], d
             QA_ROUTE_FAIL: 0,
         }
         if qa_table is not None:
+            input_binding = stored_input_binding_expression(conn, "qa_results", "q.")
             rows = conn.execute(
-                """
+                f"""
                 SELECT
                     q.route,
                     CASE
                         WHEN q.qa_rule_set_version = ?
                          AND q.output_hash = COALESCE(c.output_hash, '')
+                         AND ({input_binding} = c.input_hash OR ({input_binding} IS NULL AND ? = 0))
                         THEN 'checked'
                         ELSE 'stale'
                     END AS qa_status,
@@ -79,7 +82,7 @@ def _read_counts(binding: ProductionWorkspaceBinding) -> tuple[dict[str, int], d
                 JOIN content_state AS c USING(content_uid)
                 GROUP BY q.route, qa_status
                 """,
-                (QA_RULESET_VERSION,),
+                (QA_RULESET_VERSION, int(requires_input_binding(conn))),
             ).fetchall()
             persisted = 0
             for route, qa_status, count in rows:

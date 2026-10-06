@@ -17,7 +17,7 @@ from bg3loc.execution_state import (
     STATUS_SUCCEEDED,
 )
 from bg3loc.qa import QA_ROUTE_FAIL, QA_ROUTE_PASS, QA_ROUTE_RETRY, QA_ROUTE_REVIEW, QA_RULESET_VERSION
-from bg3loc.qa_state import QA_STATUS_CHECKED, QA_STATUS_STALE, StoredQaResult
+from bg3loc.qa_state import QA_STATUS_CHECKED, QA_STATUS_STALE, StoredQaResult, input_binding_current, requires_input_binding, stored_input_binding_expression
 
 
 DISPOSITION_MERGE_READY = "MERGE_READY"
@@ -244,19 +244,21 @@ def build_production_completion_view(
     conn = sqlite3.connect(db)
     conn.row_factory = sqlite3.Row
     with closing(conn):
+        bound_required = requires_input_binding(conn)
         execution_rows = conn.execute(
             "SELECT * FROM content_state ORDER BY batch_id, content_uid"
         ).fetchall()
         try:
+            qa_binding = stored_input_binding_expression(conn, "qa_results")
             qa_rows = conn.execute(
-                """
+                f"""
                 SELECT
                     content_uid,
                     route,
                     qa_rule_set_version,
                     qa_input_hash,
                     output_hash,
-                    checked_at
+                    checked_at, {qa_binding} AS execution_input_hash
                 FROM qa_results
                 ORDER BY content_uid
                 """
@@ -272,10 +274,11 @@ def build_production_completion_view(
             "WHERE type='table' AND name='qa_review_resolutions'"
         ).fetchone()
         if review_table is not None:
+            review_binding = stored_input_binding_expression(conn, "qa_review_resolutions")
             review_acceptance_rows = conn.execute(
-                """
+                f"""
                 SELECT content_uid, qa_rule_set_version, qa_input_hash,
-                       base_output_hash, resolved_output_hash
+                       base_output_hash, resolved_output_hash, {review_binding} AS execution_input_hash
                 FROM qa_review_resolutions
                 WHERE decision = 'ACCEPT'
                 ORDER BY resolution_id
@@ -312,6 +315,7 @@ def build_production_completion_view(
             str(row["resolved_output_hash"]),
         )
         for row in review_acceptance_rows
+        if input_binding_current(row["execution_input_hash"], str(execution_by_uid.get(str(row["content_uid"]), {}).get("input_hash", "")), required=bound_required)
     }
 
     rows: list[ProductionDisposition] = []
@@ -343,6 +347,7 @@ def build_production_completion_view(
             if (
                 qa_output_hash != current_output_hash
                 or str(qa_row["qa_rule_set_version"]) != current_rule_set_version
+                or not input_binding_current(qa_row["execution_input_hash"], str(state["input_hash"]), required=bound_required)
             ):
                 qa_status = QA_STATUS_STALE
 

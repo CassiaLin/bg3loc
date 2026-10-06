@@ -153,7 +153,8 @@ def run_qa(args: argparse.Namespace) -> int:
                 required_protected_tokens=tuple(extract_protected_tokens(source_text)),
             )
         )
-        qa_store.record_result(result, checked_at=_utc_now_iso())
+        qa_store.record_result(result, checked_at=_utc_now_iso(),
+            expected_input_hash=str(state["input_hash"]), expected_output_hash=str(state["output_hash"] or ""))
         checked += 1
         route_counts[result.route] = route_counts.get(result.route, 0) + 1
 
