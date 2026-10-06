@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import json
 from typing import Callable
 
-from bg3loc.prompt_assembly import AssembledTranslationPrompt
+from bg3loc.prompt_assembly import AssembledTranslationPrompt, SAME_ENTITY_CONTEXT_SAFETY_INSTRUCTIONS
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,12 +40,18 @@ def render_chat_messages(prompt: AssembledTranslationPrompt) -> tuple[ChatMessag
         system_lines.extend(("", "Protected runtime tokens (preserve exactly):"))
         system_lines.extend(f"- {token}" for token in prompt.protected_tokens)
 
+    if prompt.same_entity_context is not None:
+        system_lines.extend(("", "Related-field context safety:"))
+        system_lines.extend(SAME_ENTITY_CONTEXT_SAFETY_INSTRUCTIONS)
+
     user_payload = {
         "ContentUid": prompt.content_uid,
         "primaryCategory": prompt.primary_category,
         "contextGroupKeys": list(prompt.context_group_keys),
         "sourceText": prompt.source_text,
     }
+    if prompt.same_entity_context is not None:
+        user_payload.update(prompt.same_entity_context.to_dict())
 
     return (
         ChatMessage(role="system", content="\n".join(system_lines)),
