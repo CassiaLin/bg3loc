@@ -691,3 +691,103 @@ B1-03 Dialogue Context = NOT STARTED
 ```
 
 本輪完成 typed consumption、resolver validation、safe projection、fixed safety、chat render／existing provider wiring、baseline parity、mock worker／provider tests、isolated real dry render、docs 與指定 feature branch push 後停止；不開始 P4 或 B1-03。
+
+## P4 hash / resume / attempt provenance result
+
+起始 HEAD `5d450b0361d48e48cb9b162761204340926d14eb`，branch `feat/b1-02-same-entity-context`。P4 只補 execution identity／resume／attempt provenance 與必需的 stale QA/review binding；P1 structural policy、P2 context builder／selection、P3 prompt projection／safety／effective prompt hash 都不重新設計。Schema 保持 `same-entity-context/1`、policy 保持 `b1-02-structural/2`，production-owned context renderer version 為 `same-entity-prompt/1`。
+
+### Audit and canonical input identity
+
+Audit 確認 `commands/translation_state.py::load_execution_items` 原先只 hash target UID/source/category、raw protected syntax、promptVersion、ruleset fingerprint 與 locales；`production_execution` 呼叫 startup／worker，原 execution config 未綁 context；`execution_state` 在 claim 時記 attempt.input_hash，原先沒有 prompt/messages/context provenance。`seed_items` 對不同 input_hash 標記 invalidated 並重置 lease／attempt count，但保留歷史 output／attempts。Completion 先檢查 execution status，QA/review 原先主要綁 output hash，finalize 先 workspace preflight 再 completion gate。
+
+單一 `translation_identity.py::translation_input_hash` 使用原 canonical JSON serialization（UTF-8、ensure_ascii=False、sort_keys=True、compact separators）。Init／preflight／configured resolver 都使用這個 helper，沒有第二套 worker/resume hash公式。
+
+Absent payload **逐欄保持原公式**：
+
+```text
+ContentUid, SourceText, primaryCategory, protectedSyntax,
+promptVersion, rulesetFingerprint, sourceLocale, targetLocale
+```
+
+Present 才增加 versioned conditional extension：
+
+```text
+inputIdentityVersion = translation-input/2
+sameEntityContext = {
+  schemaVersion,
+  policyVersion,
+  contextFingerprint,
+  promptRendererVersion,
+  promptPolicyFingerprint
+}
+```
+
+Context fingerprint 代表 P1 canonical prepared context，包含 source／roles／truncation／target role／entity／complete evidence binding。Renderer version 與 production safety instruction tuple 的 canonical policy digest 另綁 prompt semantics；actual renderer／assembly safety declaration 不一致也拒絕。沒有加入 absolute paths、workspace location、timestamps、prepare summary、global material digest 或 incidental source-record ordering 到 item hash。Global material digest只進 workspace execution contract。Unsupported schema／policy 的 context 直接拒絕，不 best-effort hash。
+
+從起始 HEAD 捕捉 fictional legacy golden：item hash `c8813418c5c77f1fef21f70044cf846492efcf9d7a0722d9601a719dc692c0ba`、legacy execution config hash `971a67d6f0fb17be44f9c746d97a8b9663f66c99a18beb9669f2f1b3722a11a0`。P4 absent branch 保持兩者完全相同，P3 no-context HTTP/prompt golden 也保持相同。
+
+### Sealed execution contract and fresh prepare
+
+Manifest 仍為 1.2，新增 `execution.contextContract`，封存 input identity version、context schema／policy、prompt renderer version、prompt policy digest、sameEntityContextMaterialFingerprint 與 canonical contextContractFingerprint。DB metadata 保存相同 contract fingerprint。P2 `sameEntityContext` section 仍代表原 materialization contract；P4 consumer/execution binding 在新的 execution section，不新增 execute-time context 開關。
+
+Fresh prepare 在 context materialization 後、run_init 前建立此 contract，直接 seed 新公式。1.2 中的 absent rows 繼續 seed exact legacy item hash；只有 present rows 使用 conditional extension。Preflight 除原 plan／material／ruleset／inventory integrity 外，驗 supported execution contract、DB metadata binding，並從 prepared material重新計算 item identities 與 DB 全量比較。Configured resolver 在 claim 之後再次用相同 helper 驗證 current material 對 claim.input_hash，攔截 preflight 後 well-formed context/source 變更。
+
+OpenAI-compatible start／worker 都先讀 sealed manifest並 preflight，再依 contract 計 execution config hash。其餘 provider/model/options/ruleset hash 欄位不變；legacy 無 context contract 時 config公式完全不變。不同 schema／policy／renderer／material digest／fixed safety semantics 都不能混用；worker config mismatch 在 claim／provider之前拒絕。Context material 沒有 sealed production manifest 時不能用低階 CLI 啟動 context execution。
+
+Legacy manifests 1.0／1.1 保持支援。Pre-P4 1.2 缺 execution context contract 的 workspace 明確拒絕 execution，要求 fresh prepare；sealed 1.2 的 run_init reconciliation 亦拒絕就地重綁，沒有 lazy／automatic hash migration。本輪沒有升級 P2 real DB、清除 output、QA或review。SQLite additive nullable schema extension 與 input/output migration 是不同事項。
+
+### Resume, QA/review and completion safety
+
+Same source/context/ruleset/prompt policy 得到同 input_hash，原成功 state 可正常 resume；context added／removed／source／role／truncated／target role／evidence／supported version／renderer policy 改變則得到不同 hash。既有 seed primitive 對新 identity 標 invalidated；歷史 output 仍保留，但不是 current success，直到新 input完成。Production policy仍是 fresh workspace，不提供 production migration。
+
+Audit 發現僅 output-hash binding 不足：新 input 若重譯成 byte-identical text，舊 QA/review 可能重新符合 completion。因此 qa_results 與 qa_review_resolutions 最小 additive extension 新增 nullable `execution_input_hash`。新 QA/review記錄 current execution hash；staleness、retry handoff、acceptance、operator counts、completion均比較此 binding。舊 columns不存在以 NULL/unknown讀取，migration 不補造舊 hash；legacy 無 context contract可沿用 unknown binding，P4 context workspace要求有效 binding。QA route／qa_input_hash 公式不改，沒有新的 linguistic QA 規則。
+
+QA 持久化還以 transaction 與 expected input/output snapshot 驗證評估期間 identity沒有改變；context workspace不能以未知 evaluated input snapshot寫QA。Review在transaction讀取時也核對QA/current identity。不同 context下即使新 output與舊 output byte-identical，舊 QA stale；重跑QA後仍需新的 human acceptance，舊 accepted review不能滿足新 input。Finalize沿用 workspace preflight／completion gate，未增加重構或 rebuild rows。
+
+### Actual attempt provenance
+
+Execution SQLite schemaVersion 為 1.2，attempts additive nullable TEXT columns：`context_fingerprint`、`effective_prompt_hash`、`chat_messages_fingerprint`、`prompt_renderer_version`；existing `input_hash` 在 claim 已持久化。Idempotent initialize只補缺 columns，old attempts可讀，舊 provenance維持NULL，不事後推測。Get-attempts diagnostics自然提供新 fields，普通 operator report不 dump大量hash。
+
+OpenAI-compatible provider assemble/render **一次**，在 transport前建立 immutable PromptProvenance，沿用 P3 `chat_messages_fingerprint` 對當次實際 messages 計算。Worker以 per-call callback 綁當前 claim／lease owner，在送出前transaction保存 identities，再送相同 messages。沒有 shared mutable current-attempt state；wrong owner、stale input、不同值覆寫已綁 provenance均拒絕。Success、HTTP 500、timeout與 retry均留下當次準備送出的四種 identities。Provider/assembly/material resolution未準備送出時，不製造正常 prompt provenance；existing attempt failure lifecycle仍保留。
+
+Absent context_fingerprint與context renderer version 是NULL；actual effective prompt與messages hashes仍從真正 assembly／render取得。Generic provider若沒有message-rendering interface，其未知prompt provenance保持NULL。只增加 hashes／version，不增加 related source text、messages或context text到DB。Input/context/effective/messages identity四者分開，不互相推導。
+
+### Synthetic and fresh real validation
+
+新增 39 個 fictional tests：exact legacy item/config golden、context增刪與各component／legacy inputs變更、future supported版本模擬、renderer/safety version binding、source-record reorder determinism、same/different resume、actual success/500/timeout/absent provenance、render-once deterministic retry、corrupt或well-formed changed material在provider前拒絕、identical new output下舊QA/review失效、QA evaluation snapshot race、start/worker mismatch、pre-P4拒絕且DB bytes不變、live owner／immutable binding、多worker競爭claim、QA retry handoff、old attempt/QA/review additive migration與NULL readability。所有 HTTP均mock；P2/P3 tests更新為P4新的conditional identity與先合法seed再測corruption。
+
+使用同一批public source／mapping／provenance／Hold inputs **fresh prepare** 新real workspace，沒有重新掃game或使用private artifacts。P2 real DB只以read-only comparison讀取。本次291 batches、218,272 targets，material fingerprint仍為 `90a05d5e24b1855eef833ff47b79079a669b5843f032b0f715f2112f487c6729`，structural context/coverage不變。
+
+| Real hash audit metric | Result |
+| --- | ---: |
+| Total targets | 218,272 |
+| Context-present | 18,071 |
+| Context-absent | 200,201 |
+| Context-present changed hashes vs legacy P2 | 18,071 |
+| Context-absent unchanged hashes vs legacy P2 | 200,201 |
+| Unexpected changed baseline | 0 |
+| Unexpected unchanged context | 0 |
+| Provider calls / runs / attempts | 0 / 0 / 0 |
+| Completion inventory / MERGE_READY | 218,272 / 0 |
+
+Prepare後再次隔離整個 public-input directory；file-open guard僅允許prepared workspace與read-only P2 comparison，game backend／context builder／provider全部禁止。P4 preflight／full hash recomputation／completion dry audit仍通過；P2 DB與manifest bytes保持原值。No current output可重用，fresh state全部pending。
+
+| Binding fingerprint | SHA256 |
+| --- | --- |
+| Fixed prompt policy | `dac8ad75d465579e08bd2a12cc3c0ffb8c49219c4b4de7fdf972d1b7d9a0c227` |
+| Workspace execution context contract | `0f8e35da9c47cc0d3ae2743156ca6ad566db769924bbf3b47765b63b2879567c` |
+| Execution config audit | `d4a48e2e99e564ef1484d1a72147ea77233e95263aeb43e4ee3fe3448dee8743` |
+| Fresh execution inventory | `e8212224950bc61609c18e98217128e0e16b789d7c7a9577948652170389ee5f` |
+
+Config audit只計fingerprint，不start/run/send；non-network parameters為 `https://example.test`、model `dry-audit`、timeout120、maxOutputTokens／temperature均NULL，加上public ruleset與sealed context contract。
+
+Targeted suites：`159 passed, 22 subtests passed`。Full `python -m pytest -q`（Windows PYTHONUTF8=1、ignored workspace basetemp）：`801 passed, 75 subtests passed, 0 warnings`，起點為 `762 passed, 75 subtests passed`。Static audit只提交implementation、fictional fixtures／tests與aggregate docs；real text／prompts、mass UID lists、DB／workspace、private absolute paths與secrets都未提交。未real provider call，未merge main。
+
+```text
+B1-02 Production Integration P4 = ACCEPTED
+Hash / Resume / Attempt Provenance = SAFE
+Production activation = STILL PENDING FINAL INTEGRATION/REGRESSION GATE
+B1-03 Dialogue Context = NOT STARTED
+```
+
+P4不宣告B1-02全體DONE或自行啟用production。後續仍需reporting／QA integration audit與final real-corpus regression／activation gate（P5/P6或等價review），由使用者決定。此次在identity、legacy parity、config/resume/attempt/QA/review/completion safety、fresh real aggregate／isolation、docs與指定feature branch push完成後停止。
