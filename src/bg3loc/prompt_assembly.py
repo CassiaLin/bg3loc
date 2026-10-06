@@ -11,6 +11,7 @@ from bg3loc.same_entity_context import validate_same_entity_context
 
 
 # Production-owned instruction policy; never supplied by mutable configuration.
+SAME_ENTITY_PROMPT_VERSION = "same-entity-prompt/1"
 SAME_ENTITY_CONTEXT_SAFETY_INSTRUCTIONS = (
     "The related fields are context only.",
     "Translate only the target source text.",

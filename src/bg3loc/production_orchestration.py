@@ -17,6 +17,7 @@ from bg3loc.commands.research import (
 from bg3loc.commands.translation_state import run_init
 from bg3loc.execution_state import TranslationExecutionStore
 from bg3loc.production_context import materialize_contexts
+from bg3loc.translation_identity import execution_context_contract
 from bg3loc.research.classification_resolution import resolve_unclassified
 from bg3loc.ruleset_io import load_ruleset
 from bg3loc.production_workspace import (
@@ -233,12 +234,15 @@ def prepare_production_workspace(request: ProductionPrepareRequest) -> dict[str,
         )
 
     db_path = output / "execution.sqlite3"
+    context_contract = (execution_context_contract(context_metadata["sameEntityContextMaterialFingerprint"])
+                        if context_metadata is not None else None)
     run_init(
         Namespace(
             batch_plan=str(batch_plan),
             db=str(db_path),
             prompt_version="prompt-v1",
             ruleset=str(ruleset_snapshot),
+            context_contract=context_contract,
         )
     )
 
@@ -317,6 +321,7 @@ def prepare_production_workspace(request: ProductionPrepareRequest) -> dict[str,
 
     if context_metadata is not None:
         manifest["sameEntityContext"] = context_metadata
+        manifest["execution"]["contextContract"] = context_contract
 
     if effective_story_ledger is not None:
         manifest["inputs"]["storyLedger"] = {

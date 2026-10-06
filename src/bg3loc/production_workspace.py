@@ -10,6 +10,7 @@ from typing import Any
 
 from bg3loc.ruleset_io import load_ruleset
 from bg3loc.production_context import verify_context_materialization
+from bg3loc.translation_identity import validate_execution_context_contract
 
 
 SUPPORTED_PRODUCTION_MANIFEST_SCHEMAS = frozenset({"1.0", "1.1", "1.2"})
@@ -169,6 +170,12 @@ def verify_production_workspace(workspace: Path) -> ProductionWorkspaceBinding:
         raise RuntimeError("production batch material integrity mismatch")
 
     verify_context_materialization(batch_plan, root, manifest)
+    context_contract = None
+    if schema_version == "1.2":
+        context_contract = execution.get("contextContract")
+        if not isinstance(context_contract, dict):
+            raise RuntimeError("pre-P4 context workspace requires fresh prepare; no in-place migration")
+        validate_execution_context_contract(context_contract, manifest["sameEntityContext"]["sameEntityContextMaterialFingerprint"])
 
     plan = _load_json(batch_plan)
     plan_fingerprint = str(plan.get("batchPlanFingerprint", ""))
@@ -206,6 +213,17 @@ def verify_production_workspace(workspace: Path) -> ProductionWorkspaceBinding:
         raise RuntimeError("execution database source locale does not match ruleset")
     if metadata.get("targetLocale", "").casefold() != ruleset.target_locale.casefold():
         raise RuntimeError("execution database target locale does not match ruleset")
+    if context_contract is not None:
+        if metadata.get("executionContextContractFingerprint") != context_contract["contextContractFingerprint"]:
+            raise RuntimeError("execution database context contract mismatch")
+        from bg3loc.commands.translation_state import load_execution_items
+        _, expected_items = load_execution_items(batch_plan, prompt_version=ruleset.version,
+            ruleset_fingerprint=ruleset.fingerprint(), source_locale=ruleset.source_locale, target_locale=ruleset.target_locale)
+        expected = {item.content_uid: (item.batch_id, item.input_hash) for item in expected_items}
+        with closing(sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True)) as conn:
+            actual = {uid: (batch, input_hash) for uid, batch, input_hash in conn.execute("SELECT content_uid,batch_id,input_hash FROM content_state")}
+        if actual != expected:
+            raise RuntimeError("execution item input identity does not match prepared material")
 
     expected_inventory = str(execution.get("inventoryFingerprint", ""))
     if (

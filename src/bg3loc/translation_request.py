@@ -3,11 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from bg3loc.execution_state import ClaimedAttempt
 from bg3loc.protected_syntax import extract_protected_tokens
 from bg3loc.production_context import context_from_material
 from bg3loc.same_entity_context import SameEntityContext
+if TYPE_CHECKING:
+    from bg3loc.translation_identity import TranslationInputParameters
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,7 +34,8 @@ class TranslationRequest:
 class BatchMaterialResolver:
     """Resolve one claimed ContentUid back to its LSTP-01B material row."""
 
-    def __init__(self, batch_plan_path: str | Path) -> None:
+    def __init__(self, batch_plan_path: str | Path, *, input_parameters: TranslationInputParameters | None = None) -> None:
+        self.input_parameters = input_parameters
         self.batch_plan_path = Path(batch_plan_path)
         if not self.batch_plan_path.is_file():
             raise RuntimeError(f"batch plan not found: {self.batch_plan_path}")
@@ -99,7 +103,7 @@ class BatchMaterialResolver:
                 f"ContentUid {claim.content_uid}: contextGroupKeys must be a list"
             )
 
-        return TranslationRequest(
+        result = TranslationRequest(
             content_uid=claim.content_uid,
             batch_id=claim.batch_id,
             attempt_number=claim.attempt_number,
@@ -113,3 +117,11 @@ class BatchMaterialResolver:
             )),
             same_entity_context=context_from_material(row),
         )
+        if self.input_parameters is not None:
+            from bg3loc.translation_identity import translation_input_hash
+            expected = translation_input_hash(content_uid=result.content_uid, source_text=result.source_text,
+                category=result.primary_category, protected_syntax=row.get("protectedSyntax", row.get("protectedTokens", None)),
+                parameters=self.input_parameters, context=result.same_entity_context)
+            if expected != claim.input_hash:
+                raise RuntimeError("claimed input identity does not match current prepared material")
+        return result

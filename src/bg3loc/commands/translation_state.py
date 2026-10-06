@@ -18,6 +18,8 @@ from bg3loc.providers.openai_compatible import (
 )
 from bg3loc.ruleset_io import load_ruleset
 from bg3loc.translation_request import BatchMaterialResolver
+from bg3loc.production_context import context_from_material, material_context_fingerprint
+from bg3loc.translation_identity import TranslationInputParameters, translation_input_hash, execution_context_contract
 
 
 def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -186,16 +188,11 @@ def load_execution_items(
             category = str(row.get("primaryCategory", batch.get("primaryCategory", "")))
             source_text = str(row.get("SourceText", row.get("sourceText", "")))
             protected = row.get("protectedSyntax", row.get("protectedTokens", None))
-            input_hash = _stable_hash({
-                "ContentUid": uid,
-                "SourceText": source_text,
-                "primaryCategory": category,
-                "protectedSyntax": protected,
-                "promptVersion": prompt_version,
-                "rulesetFingerprint": ruleset_fingerprint,
-                "sourceLocale": source_locale,
-                "targetLocale": target_locale,
-            })
+            input_hash = translation_input_hash(
+                content_uid=uid, source_text=source_text, category=category, protected_syntax=protected,
+                parameters=TranslationInputParameters(prompt_version, ruleset_fingerprint, source_locale, target_locale),
+                context=context_from_material(row),
+            )
             items.append(ExecutionItem(uid, batch_id, input_hash))
 
     expected_count = sum(int(batch.get("recordCount", 0)) for batch in plan.get("batches", []) if isinstance(batch, dict))
@@ -211,6 +208,11 @@ def run_init(args: argparse.Namespace) -> int:
     db_path = Path(args.db)
     if not batch_plan.is_file():
         raise RuntimeError(f"batch plan not found: {batch_plan}")
+    manifest_path = batch_plan.parent.parent / "production-manifest.json"
+    if manifest_path.is_file():
+        recorded = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+        if recorded.get("schemaVersion") == "1.2":
+            raise RuntimeError("sealed context workspace cannot be reconciled in place; use fresh prepare")
 
     ruleset = load_ruleset(args.ruleset) if args.ruleset else None
     prompt_version = ruleset.version if ruleset is not None else str(args.prompt_version)
@@ -236,6 +238,9 @@ def run_init(args: argparse.Namespace) -> int:
         "sourceLocale": source_locale,
         "targetLocale": target_locale,
     })
+    contract = getattr(args, "context_contract", None)
+    if contract is not None:
+        store.set_metadata({"executionContextContractFingerprint": contract["contextContractFingerprint"]})
 
     summary = store.summary()
     total = sum(summary.values())
@@ -424,6 +429,7 @@ def _validate_openai_run(
     fingerprint: str,
     config: OpenAICompatibleChatConfig,
     ruleset,
+    context_contract=None,
 ) -> None:
     run = store.get_run(run_id)
     if run is None:
@@ -444,7 +450,7 @@ def _validate_openai_run(
         )
     if str(run["batch_plan_fingerprint"]) != fingerprint:
         raise RuntimeError("run batch plan fingerprint does not match requested batch plan")
-    expected_config_hash = openai_compatible_execution_config_hash(config, ruleset)
+    expected_config_hash = openai_compatible_execution_config_hash(config, ruleset, context_contract=context_contract)
     if str(run["execution_config_hash"]) != expected_config_hash:
         raise RuntimeError("run execution config hash does not match worker configuration")
 
@@ -457,14 +463,33 @@ def _validate_openai_run(
         raise RuntimeError("execution database target locale does not match worker ruleset")
 
 
+def _sealed_execution_contract(batch_plan: Path, db: Path, ruleset) -> dict | None:
+    manifest_path = batch_plan.parent.parent / "production-manifest.json"
+    if manifest_path.is_file():
+        from bg3loc.production_workspace import verify_production_workspace
+        binding = verify_production_workspace(manifest_path.parent)
+        if binding.batch_plan.resolve() != batch_plan.resolve() or binding.database.resolve() != db.resolve():
+            raise RuntimeError("execution paths do not match sealed workspace")
+        if load_ruleset(binding.ruleset).fingerprint() != ruleset.fingerprint():
+            raise RuntimeError("worker ruleset does not match sealed workspace")
+        return binding.manifest["execution"].get("contextContract")
+    _, present = material_context_fingerprint(batch_plan, enabled=True)
+    if present or (db.is_file() and TranslationExecutionStore(db).get_metadata().get("executionContextContractFingerprint")):
+        raise RuntimeError("context execution requires a sealed production workspace; use fresh prepare")
+    return None
+
+
 def run_openai_compatible_start(args: argparse.Namespace) -> int:
+    batch_plan = Path(args.batch_plan)
+    ruleset = load_ruleset(args.ruleset)
+    context_contract = _sealed_execution_contract(batch_plan, Path(args.db), ruleset)
     store = _require_db(Path(args.db))
     store.initialize()
     batch_plan = Path(args.batch_plan)
     fingerprint = _plan_fingerprint(batch_plan)
     ruleset = load_ruleset(args.ruleset)
     config = _openai_compatible_config_from_args(args, api_key=None)
-    config_hash = openai_compatible_execution_config_hash(config, ruleset)
+    config_hash = openai_compatible_execution_config_hash(config, ruleset, context_contract=context_contract)
     store.start_run(
         run_id=str(args.run_id),
         batch_plan_fingerprint=fingerprint,
@@ -491,6 +516,8 @@ def run_openai_compatible_worker(args: argparse.Namespace) -> int:
     if args.max_items is not None and args.max_items <= 0:
         raise RuntimeError("--max-items must be positive")
 
+    ruleset = load_ruleset(args.ruleset)
+    context_contract = _sealed_execution_contract(Path(args.batch_plan), Path(args.db), ruleset)
     store = _require_db(Path(args.db))
     store.initialize()
     batch_plan = Path(args.batch_plan)
@@ -506,9 +533,11 @@ def run_openai_compatible_worker(args: argparse.Namespace) -> int:
         fingerprint=fingerprint,
         config=config,
         ruleset=ruleset,
+        context_contract=context_contract,
     )
 
-    resolver = BatchMaterialResolver(batch_plan)
+    resolver = BatchMaterialResolver(batch_plan, input_parameters=TranslationInputParameters(
+        ruleset.version, ruleset.fingerprint(), ruleset.source_locale, ruleset.target_locale))
     provider = OpenAICompatibleChatProvider(config=config, ruleset=ruleset)
     summary = run_worker(
         store,
