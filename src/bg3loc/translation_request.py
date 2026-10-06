@@ -6,6 +6,8 @@ from pathlib import Path
 
 from bg3loc.execution_state import ClaimedAttempt
 from bg3loc.protected_syntax import extract_protected_tokens
+from bg3loc.production_context import context_from_material
+from bg3loc.same_entity_context import SameEntityContext
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,6 +21,11 @@ class TranslationRequest:
     canonical_group_key: str
     context_group_keys: tuple[str, ...]
     protected_tokens: tuple[str, ...]
+    same_entity_context: SameEntityContext | None = None
+
+    def __post_init__(self) -> None:
+        if self.same_entity_context is not None and not isinstance(self.same_entity_context, SameEntityContext):
+            raise TypeError("same_entity_context must be an immutable SameEntityContext or None")
 
 
 class BatchMaterialResolver:
@@ -104,4 +111,5 @@ class BatchMaterialResolver:
             protected_tokens=tuple(extract_protected_tokens(
                 str(row.get("sourceText", row.get("SourceText", "")))
             )),
+            same_entity_context=context_from_material(row),
         )
