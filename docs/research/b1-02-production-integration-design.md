@@ -791,3 +791,119 @@ B1-03 Dialogue Context = NOT STARTED
 ```
 
 P4不宣告B1-02全體DONE或自行啟用production。後續仍需reporting／QA integration audit與final real-corpus regression／activation gate（P5/P6或等價review），由使用者決定。此次在identity、legacy parity、config/resume/attempt/QA/review/completion safety、fresh real aggregate／isolation、docs與指定feature branch push完成後停止。
+
+## P5 Final Integration / Regression / Activation Gate
+
+日期：2026-10-07。起始 HEAD `9bac87aad3e77faad5f2d053c3cfa482ce08d9db`，branch `feat/b1-02-same-entity-context`。本輪不新增 context features；維持 `same-entity-context/1`、`b1-02-structural/2`、`same-entity-prompt/1` 與既定 skill_spell／item／quest allowlist。沒有 B1-03、semantic similarity、coverage policy、MapKey rule 或 linguistic QA policy 變更。
+
+### End-to-end audit and bounded gate fixes
+
+| Boundary | Audit / regression evidence |
+| --- | --- |
+| Public scan/extract/map/provenance → prepare | 從本機安裝重新執行 public CLI；全新 inputs、production workspace 與 run_init，沒有 private mapping／retained activation workspace dependency |
+| Full-universe builder → inline material | 完整 definition/conflict/UID-alias retention；normal absence有reason，present使用authoritative typed validation，沒有batch-local rebuild |
+| Manifest/material/contract → input identity | Plan/material/summary digests、context versions、policy digest、sealed execution contract、DB/current-material hashes一致；unknown/runtime mismatch拒絕 |
+| Resolver → assembly/render → mock HTTP | 只consume prepared context，safe projection、fixed instructions、target-only tokens、truncated flag原樣；absence走frozen baseline path |
+| Claim → transport → attempts | Per-call callback、render once、live owner/current input、success/500/timeout/retry的actual provenance；unknown舊紀錄保持NULL |
+| QA/review → completion | Input/output snapshot與execution input binding；changed context／相同output bytes不重用舊QA/acceptance |
+| Completion/bridge → finalize/rebuild | 必須先驗 sealed current identity，才計MERGE_READY／accepted target inventory；related UID不增加targets或rebuild records |
+| Legacy/package portability | 1.0/1.1 baseline workflow、old nullable DB、idempotent schema additions；wheel/sdist與clean offline installed-package smoke |
+
+Audit 以 failing tests重現並修正兩處既定gate缺口，沒有改 context/prompt semantics，所以不 bump versions：
+
+1. Standalone completion／bridge原先未呼叫sealed context workspace preflight，可能在material被修改後仍計舊success為MERGE_READY。Completion現在對1.2 manifest驗證material／contract／current input，並核對DB/plan paths；具有context contract的DB若manifest被移除或降級，亦拒絕旁路。
+2. Pending finalize原先先查外部extract，再檢查completion。順序改為preflight → current completion gate → authoritative extract/rebuild lookup，使隔離inputs下的pending finalize正確拒絕，且不讀外部資料。
+
+Actual finalize/rebuild仍依既有設計需要authoritative locale baseline、version／normalized records與rebuild assets；這是既有輸出流程的必要資料，不是execution-time B1-02 lookup。本輪synthetic ready fixture將這些fictional assets保存在workspace內，隔離research/game/source-universe後完成actual bridge／LOCA rebuild／install-ready artifact驗證。Fresh real workspace沒有翻譯output，因此只做finalize dry refusal，不生成或安裝真實翻譯。
+
+### Synthetic integration, legacy and packaging gates
+
+新增8個fictional activation tests：actual production mock execute → QA → completion → finalize／bridge／rebuild；post-success context tamper、移除／降級manifest旁路、pending finalize外部lookup順序；1.0/1.1舊DBmock workflow/resume；repeat prepare、oversize split、反向resolve順序的context/input/render identity一致。
+
+Mock完整流程每target一次claim／attempt；completion、accepted-target與merge-ready bindings皆等於target inventory，context-related UIDs未增加翻譯／claim／completion／rebuild target count。P1–P4 targeted suites亦完整重跑，包含conditional MapKey、wrong Type、Name/fallback/nested UUID、quest fallback/conflicts、stats entryName/using/filename gates、adversarial data、target/context tokens、truncation、hash增刪／resume、failed attempt與identical-text QA/review regression。
+
+CLI smoke包含production prepare、execute-openai-compatible、translation-state start/worker、validate、production finalize／bridge、rebuild八個help入口。標準`python -m build --no-isolation`成功產生wheel與sdist；檢查new modules與public schemas皆包含。Clean temp venv透過本機cached dependency wheels、`--no-index`安裝built wheel；移除PYTHONPATH，以isolated Python執行，bg3loc與schemas來自venv而非source checkout。Installed public parser/export/prepare fixture建立7 targets／6 contexts；移除inputs後preflight／render成功，provider calls 0。沒有release發布或provider network calls。
+
+### Fresh real corpus and complete dry gate
+
+Fresh corpus identity：game build `25605617`、version `4.1.1.7631656`。重新public scan發現41,502 research entries，重新extract取得232,878 English／218,685 ChineseTraditional nodes；fresh public map產生65,800 mappings與新的story/UI/Hold outputs；fresh provenance為49,860 definitions／32,660 occurrences。Generation inputs宣告historical workbook／CSV／UID lists／embedded universe均未使用。沒有以P2/P4 workspace代替正式activation資料。
+
+以同一批fresh inputs建立A／B兩份獨立workspace，各291 batches；另以skill_spell/item/quest maxRecords=32建立1,289 batches的variation。三份都fresh run_init，皆218,272 targets、14,606 unresolved source rows、excluded 0。No provider network、real translation run或real attempt。
+
+| Production category | Eligible | With context | Without context | Coverage |
+| --- | ---: | ---: | ---: | ---: |
+| skill_spell | 14,495 | 10,977 | 3,518 | 75.729562% |
+| item | 13,614 | 7,002 | 6,612 | 51.432349% |
+| quest | 5,458 | 92 | 5,366 | 1.685599% |
+
+Total context-present **18,071**、context-absent **200,201**。Coverage與P2參考值相同，沒有hardcode或放寬規則；63 skill_spell／1 item Hold rows不進eligible denominator。Item sanity：native Type=item targets11,540，native direct MapKey proof11,330，verified non-conflicting MapKey11,324，conflict excluded6，receiving context7,002。
+
+| Absence reason | All prepared targets |
+| --- | ---: |
+| UNSUPPORTED_CATEGORY | 184,641 |
+| NO_RELATED_FIELDS | 9,350 |
+| NO_RELIABLE_IDENTITY | 4,754 |
+| STRUCTURAL_CONFLICT | 1,255 |
+| CATEGORY_MISMATCH | 137 |
+| HOLD_OR_INELIGIBLE | 64 |
+
+Quest conflict targets905全部不供context；absence是具名normal fallback，不是silently丟棄invalid present data。每個present的schema／policy、target binding、limits、unique related UID/text與context digest均由authoritative validator再次驗證，全部通過。
+
+| Fresh corpus / contract fingerprint | SHA256 |
+| --- | --- |
+| Normalized English semantic corpus | `d1607fd5dec03eab5bb385df565b82379f05eb1e37b744b4e6f609fb9c5b6fa6` |
+| Public definitions | `f835cdcee716d69597f50ee7e3234580dc75bcaf700ea92d20491c98047f1226` |
+| Public occurrences | `fc2edf1e6da7ebf50592968974702cb6816f8e23e29dec82bb382061b1b88be7` |
+| Fresh classification | `3545b138556c466cf40382c995afacfa900a10fc51b90a64c494e4a6451c2519` |
+| Context material | `90a05d5e24b1855eef833ff47b79079a669b5843f032b0f715f2112f487c6729` |
+| Execution context contract | `0f8e35da9c47cc0d3ae2743156ca6ad566db769924bbf3b47765b63b2879567c` |
+| Fresh summary semantic digest | `e80d0396cf62360a05e2aec4b171c9782a90b2a30e2bf07fdb34efe8abc31b49` |
+
+Fresh classification digest與P4不同的原因已逐UID分析：329筆classificationEvidence只改array ordering，elements完全相同；沒有category/status/tags變更。Public map的evidence collection order可反映於raw classification/plan provenance，但不影響context selection／coverage／material fingerprint或per-item translation input hashes。本輪不藉此改classification policy或P2 digest contract。
+
+### Full parity, isolation and determinism evidence
+
+Prepare後移走整個fresh public inputs directory（extract、research、source universe、provenance）；artifact file-open guard只允許三份新prepared workspaces，game backend／context builder／provider transport皆禁止。Preflight、DB read、resolve、full dry render、hash audit、completion與pending finalize dry gate皆成功；external artifact reads **0**。
+
+正式A workspace的218,272 requests全部render成功，with context18,071／without200,201，render與unknown-version failures皆0。所有present prompts確認fixed safety、unique root sourceText為target、safe projection keys、related fields≤4／source chars≤4,000、original prepared truncation/text/order。沒有新增entityIdentity／MapKey／related UID／fingerprints／source provenance欄位。Related tokens不進target requirements。
+
+不是只抽樣：全200,201 absent requests都與起始P3之前（HEAD940ff617）的frozen assembly／renderer程式逐byte比較system/user與effective hash，並獨立重建legacy input hash公式；全18,071 present hashes均不同於legacy公式。P3 fictional HTTP golden提供傳輸body byte parity，所有B1 targeted regression提供sample與mock provenance。Unexpected baseline changes／unchanged context hashes **0**。
+
+| Full dry audit metric | Result |
+| --- | ---: |
+| Total rendered | 218,272 |
+| Context hashes correctly changed | 18,071 |
+| Baseline hashes/prompt path unchanged | 200,201 |
+| Render / version / hash mismatches | 0 / 0 / 0 |
+| Mean / p95 / max extra prompt chars | 587.4518288971279 / 782 / 1,276 |
+| Related UIDs outside target inventory | 0 |
+| Completion target inventory | 218,272 |
+| Provider network / real runs / real attempts | 0 / 0 / 0 |
+
+Prompt delta分母是context-present requests，不是token count。Full rendered-message aggregate `ade4d52dc5fc2693466072a7220a76676e393de12040b9710555d9e857d0c5e8`；baseline-only rendered-message aggregate `a8ebca50e3a79a78b65d505f70eefabe4e8597fc84ca32f09e010da3546f5db9`。Only aggregates輸出，real text/prompts/UID lists未匯出或提交。
+
+A/B material bytes與material fingerprint相同；summary／context contract與deterministic manifest/plan fields相同。Raw batch-plan SHA因output locator paths不同可不同；只比較刪除classificationLedger/materialPath locators後的plan semantics，且不將locator paths作item identity。A/B/split所有target contextFingerprints與input hashes全量相同；repeat rendering相同。Synthetic反向resolve/oversize split亦保留context、hash與render identity。沒有timestamp參與item/context fingerprint。
+
+Fresh real狀態全部pending，current completion為false；finalize拒絕且不讀外部extract，不產生輸出。Synthetic current-success/QA/review到actualfinalize/rebuild/LOCA artifact已通過；old-context success/acceptance不能滿足新identity。Target translation／claim／completion／accepted-target count一致，context references沒有增加rebuild target records。
+
+### Final regression, privacy and decision
+
+Targeted **435 passed, 22 subtests passed**；full `python -m pytest -q`（Windows PYTHONUTF8=1、ignored workspace basetemp）**809 passed, 75 subtests passed, 0 warnings**，baseline801 passed。Wheel **PASS**、sdist **PASS**、fresh offline install **PASS**、modules/schemas inventory **PASS**、8 CLI help smokes **PASS**。Latest wheel已重建並重裝，確認也包含最終completion gate修正；未發release。
+
+Public reproducibility由本輪實際fresh scan/extract/map/export/prepare與installed synthetic public workflow確認，沒有private repo/manual mappings/secret retained artifact需求。Privacy audit只提交兩個bounded gate修正、fictional tests與aggregate docs；沒有real BG3 text、real prompt material、mass UID/MapKey/entity lists、DB/workspace、private/local drive paths、API keys或provider secrets。相關P1–P4版本與語意不變。
+
+```text
+B1-02 Production Activation Gate = PASSED
+B1-02 Same-Entity Context = READY FOR PRODUCTION ACTIVATION
+B1-03 Dialogue Context = NOT STARTED
+```
+
+Decision只表示既定architecture/pipeline通過enable前gate，沒有送真實翻譯請求、merge main、release或install部署；不宣稱品質提升。以下limitations仍是正式結論的一部分。
+
+### Limitations retained
+
+- B1-02先前safety validation僅25 A/B pairs，單一external translation source；全部pairs恰好得到相同譯文。
+- 沒有證明context提升翻譯品質，render/hash/gate通過亦不是所有LLM輸出無semantic contamination的證明。
+- Quest coverage低；保持native entityId與完整definition conflict規則，不為coverage放寬。
+- Item MapKey跨遊戲版本穩定性 **NOT VERIFIED**。
+- B1-03 Dialogue Context **NOT STARTED**；本輪沒有真實provider翻譯或安裝部署。
