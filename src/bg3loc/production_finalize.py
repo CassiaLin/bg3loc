@@ -190,9 +190,9 @@ def finalize_production_workspace(
     rebuild_backend: ArchiveBackend | None = None,
 ) -> ProductionFinalizeResult:
     binding = verify_production_workspace(request.workspace)
-    extract_manifest = _resolve_recorded_extract(binding)
     completion = build_production_completion_view(binding.database, binding.batch_plan)
     _require_completion_ready(completion)
+    extract_manifest = _resolve_recorded_extract(binding)
     execution_snapshot_sha256 = sha256_file(binding.database)
     _require_fresh_output(request.output)
 

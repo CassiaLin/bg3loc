@@ -239,12 +239,27 @@ def build_production_completion_view(
     if not db.is_file():
         raise RuntimeError(f"execution database not found: {db}")
 
+    # Completion/bridge are public entry points too. A sealed context workspace
+    # must not bypass the material/current-input gate used by execute/finalize.
+    manifest_path = plan.parent.parent / "production-manifest.json"
+    context_workspace_verified = False
+    if manifest_path.is_file():
+        declared = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+        if declared.get("schemaVersion") == "1.2":
+            from bg3loc.production_workspace import verify_production_workspace
+            binding = verify_production_workspace(manifest_path.parent)
+            if binding.database.resolve() != db.resolve() or binding.batch_plan.resolve() != plan.resolve():
+                raise RuntimeError("completion paths do not match sealed context workspace")
+            context_workspace_verified = True
+
     material_index = _load_material_index(plan)
 
     conn = sqlite3.connect(db)
     conn.row_factory = sqlite3.Row
     with closing(conn):
         bound_required = requires_input_binding(conn)
+        if bound_required and not context_workspace_verified:
+            raise RuntimeError("context completion requires its sealed production workspace")
         execution_rows = conn.execute(
             "SELECT * FROM content_state ORDER BY batch_id, content_uid"
         ).fetchall()
