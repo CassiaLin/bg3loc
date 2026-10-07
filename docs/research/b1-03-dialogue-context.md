@@ -291,3 +291,211 @@ Production Integration = NOT STARTED
 
 READY只表示public研究結構、provenance、fixtures、real aggregate與reproducibility已建立。
 Production policy、material contract、runtime semantics與翻譯品質尚未驗證或實作。
+
+## Phase 2 Policy Evaluation
+
+日期：2026-10-08。Starting HEAD `5eb24658fe5fc5eda5f5b634390755fe22e572c2`。
+本輪只新增獨立 research evaluator／renderer、aggregate schema 與 local provider-neutral
+pilot transport；Phase 1 parser/model與 B1-02／production semantics維持原狀。
+
+### Formal policies and shared eligibility
+
+- **A — Direct Localized Sets**：僅 verified native child edge 的 localized predecessor／
+  successor sets；不跨 controls、不用 nearby/same-speaker/order heuristic。
+- **B — Bounded Structural Traversal**：只沿 verified child edges，最多跨1／2／3個
+  structural-only nodes，找到 localized node即停止。Bound指 internal structural nodes數，
+  不是 total edge count。Unknown nodes、Jump、Alias、Nested Dialog不跨越。
+- **C — A + Static Speaker Evidence**：C1提供 same_static_reference／different_static_reference／
+  unknown；C2提供 single verified static reference ID，沒有角色名稱。Slot-only／missing／
+  ambiguous不猜；C1標unknown，C2省略reference。不能把static relation寫成runtime角色已解析。
+
+共用 whole-dialogue/node conflict gate、native identity origins、target UID單一scoped occurrence
+binding與完整English join。Conflicting definitions為STRUCTURAL_CONFLICT；多個incompatible
+occurrences不合併。Neighbour同一node的全部localized UID alternatives保留；缺少任一候選的
+nonempty English source即whole-set fallback，不挑剩下的一條。Target UID不作自己的context。
+
+Directions分開：possiblePredecessors／possibleSuccessors；每個array明確是 possible alternatives，
+不是 ordered transcript。排序使用node ID／ContentUid，只決定serialization，不證明歷史。
+Research renderer只投影source text（C另有受限static evidence），不投影dialog/node IDs、UID、
+provenance/fingerprints。固定六句安全指示加untrusted-data提醒；C另有static-reference限定。
+Adversarial strings留在JSON data，不能進system instructions。這是format/safety設計驗證，
+不是所有LLM都不受prompt injection影響的證明。
+
+B使用branch-local ancestor membership防cycle，同時追蹤visited IDs；DAG convergence另計。
+每條可達branch保留，永不選canonical history；finite bound保證終止。Child只是potential flow；
+jumptarget transfer/point語義UNKNOWN，SourceNode是reuse reference，NestedDialog scope UNKNOWN，
+皆不等同child flow。Structural-only crossings仍有conditions/control/runtime uncertainty。
+
+### Corpus and production-compatible inventory
+
+沿用Phase 1五份public ledgers，重新驗全部semantic seals。使用accepted production batch
+materials的實際UID/category/count bindings；所有target sourceText與完整English snapshot逐項相同。
+Preflight通過，execution DB bytes前後一致，未改production material或執行翻譯。
+Build `25605617`、version `4.1.1.7631656`；English byte SHA256 `3aec0b9691045358803e7313f744dc5b10601c87a1b4d19e78429d0d215d076b`；
+inventory semantic fingerprint `9ce23b8b9494951933e5c332d81d5714834f0eeaa0467ac4d9b170cdd0aee0f8`。分母從materials計算，沒有hardcode175,930。
+
+| Policy | dialogue_general / 166,036 | bark / 9,894 | Total context / 175,930 | Coverage | Gained / lost vs A |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| A | 27,949 | 0 | 27,949 | 15.886432% | +0 / -0 |
+| B1 | 28,471 | 0 | 28,471 | 16.183141% | +524 / -2 |
+| B2 | 28,598 | 0 | 28,598 | 16.255329% | +651 / -2 |
+| B3 | 28,599 | 0 | 28,599 | 16.255897% | +652 / -2 |
+| C1 | 27,949 | 0 | 27,949 | 15.886432% | +0 / -0 |
+| C2 | 27,949 | 0 | 27,949 | 15.886432% | +0 / -0 |
+
+A與Phase 1的27,951 estimate差2，是完整English join新排除的2 targets，不是graph/parser/policy
+放寬。A absence：STRUCTURAL_CONFLICT129,083、NO_LOCALIZED_RELATION18,806、
+NO_DIALOGUE_OCCURRENCE86、INCOMPATIBLE_OCCURRENCES4、INCOMPLETE_ENGLISH_CONTEXT2。
+B多發現缺English候選，INCOMPLETE_ENGLISH_CONTEXT變6，因此各lost2；沒有silent omission。
+B3相對B2只再新增1 target。Bark在全部政策都無reliable context，維持baseline。
+
+### Direction, ambiguity and cardinality
+
+| Policy | Predecessor | Successor | Both | Multiple predecessor | Multiple successor |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| A | 22,958 | 19,283 | 14,292 | 1,518 | 2,565 |
+| B1 | 23,919 | 19,895 | 15,343 | 1,663 | 2,962 |
+| B2 | 24,062 | 19,978 | 15,442 | 1,701 | 3,031 |
+| B3 | 24,063 | 19,979 | 15,443 | 1,702 | 3,032 |
+
+| Policy | 0 lines | 1 | 2 | 3 | 4 | 5+ |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| A | 147,981 | 9,969 | 12,046 | 1,454 | 947 | 3,533 |
+| B1 | 147,459 | 9,489 | 12,553 | 1,776 | 1,030 | 3,623 |
+| B2 | 147,332 | 9,449 | 12,560 | 1,799 | 1,038 | 3,752 |
+| B3 | 147,331 | 9,448 | 12,562 | 1,799 | 1,038 | 3,752 |
+
+Cardinality是實際English line candidates，非只數nodes；同一node可有多個localized variants。
+A平均2.579985 lines、p95=8、max=32；B1／B2／B3平均2.616417／2.656689／2.656736，p95=8、
+max=32。C coverage/cardinality與A相同，沒有新增graph coverage。
+
+| Policy | Pred alternatives mean / p95 / max | Succ alternatives mean / p95 / max | Pred >4 / >8 | Succ >4 / >8 |
+| --- | --- | --- | --- | --- |
+| A | 0.90 / 2 / 14 | 0.91 / 3 / 20 | 67 / 9 | 473 / 60 |
+| B1 | 0.93 / 2 / 14 | 0.94 / 3 / 20 | 74 / 9 | 480 / 60 |
+| B2 | 0.93 / 2 / 14 | 0.94 / 3 / 20 | 74 / 9 | 482 / 60 |
+| B3 | 0.93 / 2 / 14 | 0.94 / 3 / 20 | 74 / 9 | 482 / 60 |
+
+Alternatives統計分母是各policy context-present targets，方向為0也保留。B1／B2／B3相對A
+額外multiple predecessor targets為145／183／184；multiple successor為397／466／467。
+Traversal actual cycle encounters與targets encountering cycle全部0；convergence events為5／17／17，
+不能把merge誤報cycle。Max frontier=21、max expanded paths=21；synthetic genuine cycle已驗證終止。
+零observed cycles不等於任意未來corpus都無cycle。
+
+### Natural character cost and budget simulation
+
+沒有truncate／重新budget。Source chars是context English Unicode codepoint總和；rendered added
+chars是研究system+canonical JSON相對target-only renderer增加量，包含escaping／field與instruction
+overhead，不是tokens／provider cost。所有mean/p95/max以context-present targets為分母。
+
+| Policy | Source chars mean / p95 / max | Added rendered chars mean / p95 / max | Speaker overhead vs A mean / p95 / max |
+| --- | --- | --- | --- |
+| A | 162.59 / 470 / 2707 | 589.52 / 985 / 3519 | 0.00 / 0 / 0 |
+| B1 | 165.06 / 470 / 2707 | 592.62 / 985 / 3519 | 0.00 / 0 / 0 |
+| B2 | 167.03 / 473 / 2707 | 595.31 / 1002 / 3519 | 0.00 / 0 / 0 |
+| B3 | 167.04 / 473 / 2707 | 595.32 / 1002 / 3519 | 0.00 / 0 / 0 |
+| C1 | 162.59 / 470 / 2707 | 793.05 / 1396 / 4620 | 203.53 / 422 / 1592 |
+| C2 | 162.59 / 470 / 2707 | 903.63 / 1620 / 5218 | 314.11 / 669 / 2211 |
+
+1000／2000／4000 source-char simulation採whole-set fallback，僅計would-exceed targets：
+A/C為156／3／0；B1/2/3為157／3／0。沒有正式採B1-02的4,000-char contract，也沒有選production
+line limit。5+ line targets與max32需要在design階段決定budget/fallback，不能挑一個alternative
+假裝完整history。
+
+### Speaker utility, choice proxies and node types
+
+A-context target speaker：explicit single static reference26,233、slot-only1,680、ambiguous36、
+missing0。Context line relation incidences：same_static_reference34,907、different_static_reference30,602、
+unknown6,599。Same slot alone仍是unknown。這些statics不足以證明runtime actor/gender/name。
+C1與C2可可靠投影它們聲稱的static evidence，但semantic value未證實；C1沒有ID exposure，
+C2 opaque ID的額外成本較大，沒有quality evidence足以支持其複雜度。
+
+A structural constructor proxies：TagQuestion→TagAnswer候選incidences10,882（unique UID pairs5,441）；
+TagAnswer→TagQuestion10,614（unique UID pairs5,310）。Incidences按target/direction/count計，
+同pair可能從兩端或不同localized variants觀察；不等同Phase 1 unique node edges，也不證明
+每條TagQuestion一定是本次player choice或TagAnswer的實際NPC actor。
+
+Node type census只aggregate；target計target UID，neighbours計line-candidate incidences：
+
+| A context role | Constructor census |
+| --- | --- |
+| predecessors | TagAnswer 17,886, TagGreeting 12,729, TagQuestion 5,441 |
+| successors | ActiveRoll 657, TagAnswer 28,947, TagQuestion 6,448 |
+| target | ActiveRoll 542, TagAnswer 17,429, TagGreeting 3,692, TagQuestion 6,286 |
+
+B／C的完整census同樣保存在local aggregate summary；C與A相同，B1/2/3包括derived reachable
+candidates，仍未執行runtime conditions。
+
+### Comparison and recommendation
+
+| Dimension | A | B | C |
+| --- | --- | --- | --- |
+| Structural confidence | Direct potential relation，explicit alternatives | Derived bounded reachability；CONDITIONAL control semantics | A relation + reliable static references；runtime speaker仍UNKNOWN |
+| Coverage | 27,949 | 最多28,599；net gain650 | 同A |
+| Ambiguity | 已有multi-branch與32-line tails | 多397–467個multiple-successor targets | 不減branch ambiguity |
+| Prompt size | Mean589.52 added chars | Mean592.62–595.32 | C1/C2 mean793.05／903.63 |
+| Speaker value | 不額外推論 | 不額外推論 | 未證明語意效益／角色identity |
+| Implementation complexity | 中：source completeness、UID binding、sets | 高：bounds、cycles、opaque controls、paths | 額外projection／reference caveats |
+| Safety risk | alternatives被當sequence／context contamination，需pilot | 再加control/path誤判 | 再加speaker reference誤導 |
+
+```text
+Recommended policy = A
+```
+
+Precise recommendation：verified native child edge only；non-conflicting whole dialogue/node definitions；
+target UID一致scoped binding；full source-side English alternatives；direction保留；deterministic
+node/UID ordering；no control traversal、speaker names/static IDs、nearby/order heuristics；target source
+是唯一翻譯target，context只read-only、不能授權補寫資訊。Bark目前全部baseline。Budget尚未凍結。
+
+A reliability verdict **YES for production evaluation**，不是quality/safety已PASS。B **CONDITIONAL**，
+control semantics不足、coverage gain小且ambiguity增加，不推薦現在production design採用。
+C1可以作為未來受限研究，但本輪不推薦加入A；C2的opaque IDs/成本沒有已證實的價值，排除。
+沒有新增第四個production candidate。
+
+### Local-only safety pilot and remaining gate
+
+只為最有希望的A準備25 targets × target-only/context，共50 anonymous requests，沒有外部call。
+Deterministic strata：linear5、merge5、divergence4、choice proxy4、static-reference change4、fill3。
+Bark沒有eligible context，bark quota未使用，另外3個deterministic eligible dialogue targets補足，
+不偽造bark sample。Package含requests、private assignments、blind review template與summary；
+requests沒有policy/isContext/UID/dialog/node識別。Reviewer不看assignments；translator必須看到
+可用context，因此只conceal condition names/order，不能聲稱prompt presence也完全blind。
+
+Sample fingerprint `f5cd957713bc400d59e2d6461b768ad74725e9d1a6cd3dde1d05ec4c3728c8cc`；anonymous request fingerprint `bdec2339839d698ade001c3a3b1d905f908bf2d4900af24ad81efb18ed686793`。
+Translation source **NOT PROVIDED**、outputs0、review0；worse／contamination／branch misunderstanding／
+no observable difference **NOT EVALUATED**，不能寫SAFE或宣稱沒有劣化。B/C不做provider pilot。
+
+Public local workflow：
+
+```powershell
+python -m bg3loc research dialogue-policy-evaluate --evidence-dir workspace/dialogue-research --source-snapshot workspace/extract/normalized/English.jsonl --batch-plan workspace/production/batches/batch-plan.json --output-dir workspace/dialogue-policy --prepare-pilot
+python -m bg3loc research dialogue-pilot-import --package-dir workspace/dialogue-policy/safety-pilot --responses workspace/external-responses.jsonl --translation-source "external source label"
+```
+
+Importer驗request seal、完整/unique response IDs、case/target bindings，建立anonymous output review；
+只收outputs仍是PENDING REVIEW，不能自動給quality/safety verdict。原始English strings、UID/UUIDs、
+prompts、pilot proprietary payload僅在ignored local workspace；未提交或送至外部服務。
+
+### Determinism, regression, packaging and decision
+
+A/B/C全量metrics、coverage、inventory fingerprint與25-pair package在repeat／different batch plan
+完全相同，package逐byte equality。Batch-plan byte SHA因batch config/locators不同可不同，不是
+context選擇依batch order。Phase 1 semantic seals、English snapshot與inventory fingerprint均記錄於
+aggregate report；沒有timestamp參與sample/render ordering。Adversarial、cycles/convergence、opaque
+references、unknown speaker、conflict／occurrence ambiguity、English completeness、budget no-truncation、
+response sealing／blinding全部有fictional tests。
+
+Targeted **159 passed**；full **875 passed, 75 subtests passed, 0 warnings**（baseline847）。
+Wheel／sdist build與new modules/schema inclusion **PASS**；兩個research CLI help **PASS**。
+Protected production／B1-02／Phase 1 parser/model diff為empty。沒有real dialogue text、mass IDs、
+pilot proprietary payload、private/local drive paths、workspace/DB或secrets提交。
+
+```text
+B1-03 Dialogue Context Policy Evaluation = STRUCTURALLY READY
+Safety Validation = PENDING
+Production Integration = NOT STARTED
+```
+
+本輪沒有凍結production policy、沒有production integration/design implementation、沒有provider
+call／release／merge main。下一個必要證據是外部25-pair輸出與blind safety review；完全相同譯文
+仍可通過safety，但quality improvement不是必要條件，也未由本輪證明。
