@@ -154,6 +154,14 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     provenance_p.add_argument("--output-dir", required=True, help="Structural provenance output directory")
     provenance_p.set_defaults(handler=run_research_provenance_export)
 
+    dialogue_p = research_subparsers.add_parser(
+        "dialogue-audit", help="Export research-only dialogue graphs from the user's installation",
+    )
+    dialogue_p.add_argument("--game-dir", required=True)
+    dialogue_p.add_argument("--output-dir", required=True)
+    dialogue_p.add_argument("--classification", help="Optional public classification JSONL for coverage estimate")
+    dialogue_p.set_defaults(handler=run_dialogue_audit)
+
     # bg3loc research classify
     classify_p = research_subparsers.add_parser(
         "classify",
@@ -283,6 +291,28 @@ def resolve_runtime_metadata(game_dir_path: Path) -> dict[str, Any]:
         "buildId": build_id,
         "gameVersion": game_version,
     }
+
+
+def run_dialogue_audit(args: argparse.Namespace) -> int:
+    from bg3loc.research.dialogue_export import export_dialogue_research
+    backend = backend_from_probe(resolve_backend())
+    if backend is None:
+        raise RuntimeError("public archive backend unavailable")
+    corpus = resolve_runtime_metadata(Path(args.game_dir))
+    report = export_dialogue_research(
+        Path(args.game_dir), backend, Path(args.output_dir),
+        classification=Path(args.classification) if args.classification else None,
+    )
+    if resolve_runtime_metadata(Path(args.game_dir)) != corpus:
+        raise RuntimeError("game corpus changed during dialogue extraction")
+    report["corpus"] = corpus
+    if args.classification:
+        report["targetClassificationSHA256"] = _sha256_file(Path(args.classification))
+    (Path(args.output_dir) / "dialogue-summary.json").write_text(
+        json.dumps(report, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8",
+    )
+    print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+    return 0
 
 
 def run_research_scan(args: argparse.Namespace) -> int:

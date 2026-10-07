@@ -1,0 +1,516 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Research dialogue structural evidence v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "recordType",
+    "evidenceId",
+    "dialogueId"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "dialogue-context-evidence/1"
+    },
+    "recordType": {
+      "enum": [
+        "dialogue",
+        "node",
+        "occurrence",
+        "edge",
+        "targetEvidence"
+      ]
+    },
+    "evidenceId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "dialogueId": {
+      "type": "string"
+    },
+    "nodeId": {
+      "type": "string"
+    },
+    "definitionFingerprint": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "dialogueIdentityOrigin": {
+      "enum": [
+        "native_UUID",
+        "resource_scope"
+      ]
+    },
+    "nodeIdentityOrigin": {
+      "enum": [
+        "native_UUID",
+        "fallback_ordinal"
+      ]
+    },
+    "dialogueIdentityOrigins": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "native_UUID",
+          "resource_scope"
+        ]
+      }
+    },
+    "nodeIdentityOrigins": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "native_UUID",
+          "fallback_ordinal"
+        ]
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceResource"
+      ],
+      "properties": {
+        "sourceResource": {
+          "type": "string",
+          "pattern": "^(?!/)(?!.*[:\\\\])(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+        },
+        "fieldRole": {
+          "type": "string"
+        }
+      }
+    },
+    "nodeCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "nodeType": {
+      "type": "string"
+    },
+    "nodeKind": {
+      "enum": [
+        "localized",
+        "structural_only",
+        "unknown"
+      ]
+    },
+    "speaker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "slot",
+        "status",
+        "references",
+        "mappingEvidence",
+        "resolution"
+      ],
+      "properties": {
+        "slot": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "explicit_reference",
+            "slot_only",
+            "missing",
+            "ambiguous"
+          ]
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "mappingEvidence": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "resolution": {
+          "const": "static_reference_only"
+        }
+      }
+    },
+    "unresolvedLocalizationHandles": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "contentUid": {
+      "type": "string",
+      "pattern": "^h[0-9a-fA-F]{8}g[0-9a-fA-F]{4}g[0-9a-fA-F]{4}g[0-9a-fA-F]{4}g[0-9a-fA-F]{12}$"
+    },
+    "version": {
+      "type": "string"
+    },
+    "fieldRole": {
+      "const": "TaggedTexts.TaggedText.TagTexts.TagText"
+    },
+    "lineId": {
+      "type": "string"
+    },
+    "variantFingerprint": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "fromNode": {
+      "type": "string"
+    },
+    "toNode": {
+      "type": "string"
+    },
+    "edgeType": {
+      "enum": [
+        "child",
+        "jumptarget",
+        "SourceNode",
+        "NestedDialogNodeUUID"
+      ]
+    },
+    "relationKind": {
+      "enum": [
+        "potential_control_flow",
+        "reference_only"
+      ]
+    },
+    "childIndex": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "referenceParameters": {
+      "type": "object"
+    },
+    "structuralStatus": {
+      "enum": [
+        "DIRECT",
+        "reference_only",
+        "missing_endpoint",
+        "conflict_or_fallback"
+      ]
+    },
+    "definitionFingerprints": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "dialogueDefinitionFingerprints": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "conflict": {
+      "type": "boolean"
+    },
+    "directPredecessors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "directSuccessors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "directLocalizedPredecessors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "directLocalizedSuccessors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "nearestLocalizedPredecessors": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "nodes",
+        "revisitedNode",
+        "blockedUnknown",
+        "boundReached",
+        "maxHops",
+        "reliability"
+      ],
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "nodeId",
+              "hops"
+            ],
+            "properties": {
+              "nodeId": {
+                "type": "string"
+              },
+              "hops": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        },
+        "revisitedNode": {
+          "type": "boolean"
+        },
+        "blockedUnknown": {
+          "type": "boolean"
+        },
+        "boundReached": {
+          "type": "boolean"
+        },
+        "maxHops": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "reliability": {
+          "const": "INDIRECT"
+        }
+      }
+    },
+    "nearestLocalizedSuccessors": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "nodes",
+        "revisitedNode",
+        "blockedUnknown",
+        "boundReached",
+        "maxHops",
+        "reliability"
+      ],
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "nodeId",
+              "hops"
+            ],
+            "properties": {
+              "nodeId": {
+                "type": "string"
+              },
+              "hops": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        },
+        "revisitedNode": {
+          "type": "boolean"
+        },
+        "blockedUnknown": {
+          "type": "boolean"
+        },
+        "boundReached": {
+          "type": "boolean"
+        },
+        "maxHops": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "reliability": {
+          "const": "INDIRECT"
+        }
+      }
+    },
+    "relationReliability": {
+      "enum": [
+        "DIRECT",
+        "AMBIGUOUS",
+        "UNSUPPORTED"
+      ]
+    },
+    "occurrenceEvidenceIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "contentUids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "speakerEvidenceVariants": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "slot",
+          "status",
+          "references",
+          "mappingEvidence",
+          "resolution"
+        ],
+        "properties": {
+          "slot": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "explicit_reference",
+              "slot_only",
+              "missing",
+              "ambiguous"
+            ]
+          },
+          "references": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          },
+          "mappingEvidence": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "resolution": {
+            "const": "static_reference_only"
+          }
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "recordType": {
+          "const": "dialogue"
+        }
+      },
+      "required": [
+        "dialogueIdentityOrigin",
+        "definitionFingerprint",
+        "nodeCount",
+        "provenance"
+      ]
+    },
+    {
+      "properties": {
+        "recordType": {
+          "const": "node"
+        }
+      },
+      "required": [
+        "nodeId",
+        "dialogueIdentityOrigin",
+        "nodeIdentityOrigin",
+        "definitionFingerprint",
+        "nodeType",
+        "nodeKind",
+        "speaker",
+        "unresolvedLocalizationHandles",
+        "provenance"
+      ]
+    },
+    {
+      "properties": {
+        "recordType": {
+          "const": "occurrence"
+        }
+      },
+      "required": [
+        "nodeId",
+        "definitionFingerprint",
+        "contentUid",
+        "version",
+        "fieldRole",
+        "lineId",
+        "variantFingerprint",
+        "provenance"
+      ]
+    },
+    {
+      "properties": {
+        "recordType": {
+          "const": "edge"
+        }
+      },
+      "required": [
+        "nodeId",
+        "definitionFingerprint",
+        "fromNode",
+        "toNode",
+        "edgeType",
+        "relationKind",
+        "childIndex",
+        "referenceParameters",
+        "provenance"
+      ]
+    },
+    {
+      "properties": {
+        "recordType": {
+          "const": "targetEvidence"
+        }
+      },
+      "required": [
+        "nodeId",
+        "nodeType",
+        "dialogueIdentityOrigins",
+        "nodeIdentityOrigins",
+        "definitionFingerprints",
+        "dialogueDefinitionFingerprints",
+        "conflict",
+        "speaker",
+        "directPredecessors",
+        "directSuccessors",
+        "directLocalizedPredecessors",
+        "directLocalizedSuccessors",
+        "nearestLocalizedPredecessors",
+        "nearestLocalizedSuccessors",
+        "relationReliability",
+        "occurrenceEvidenceIds",
+        "contentUids",
+        "speakerEvidenceVariants"
+      ]
+    }
+  ]
+}

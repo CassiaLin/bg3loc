@@ -28,6 +28,9 @@ bg3loc = "bg3loc.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"bg3loc.research" = ["*.ps1"]
+
 [tool.setuptools.data-files]
 "share/bg3loc/schemas" = ["schemas/*.json"]
 "share/bg3loc/schemas/lstp" = ["schemas/lstp/*.json"]
