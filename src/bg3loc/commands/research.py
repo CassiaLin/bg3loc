@@ -162,6 +162,20 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     dialogue_p.add_argument("--classification", help="Optional public classification JSONL for coverage estimate")
     dialogue_p.set_defaults(handler=run_dialogue_audit)
 
+    policy_p = research_subparsers.add_parser("dialogue-policy-evaluate", help="Research-only A/B/C dialogue policy evaluation")
+    policy_p.add_argument("--evidence-dir", required=True)
+    policy_p.add_argument("--source-snapshot", required=True)
+    policy_p.add_argument("--batch-plan", required=True)
+    policy_p.add_argument("--output-dir", required=True)
+    policy_p.add_argument("--prepare-pilot", action="store_true", help="Prepare local-only provider-neutral safety requests; never send")
+    policy_p.set_defaults(handler=run_dialogue_policy_evaluate)
+
+    pilot_import_p = research_subparsers.add_parser("dialogue-pilot-import", help="Validate local external pilot responses and prepare blinded review")
+    pilot_import_p.add_argument("--package-dir", required=True)
+    pilot_import_p.add_argument("--responses", required=True)
+    pilot_import_p.add_argument("--translation-source", required=True)
+    pilot_import_p.set_defaults(handler=run_dialogue_pilot_import)
+
     # bg3loc research classify
     classify_p = research_subparsers.add_parser(
         "classify",
@@ -291,6 +305,20 @@ def resolve_runtime_metadata(game_dir_path: Path) -> dict[str, Any]:
         "buildId": build_id,
         "gameVersion": game_version,
     }
+
+
+def run_dialogue_pilot_import(args: argparse.Namespace) -> int:
+    from bg3loc.research.dialogue_pilot import import_responses
+    print(json.dumps(import_responses(Path(args.package_dir), Path(args.responses), args.translation_source), sort_keys=True))
+    return 0
+
+
+def run_dialogue_policy_evaluate(args: argparse.Namespace) -> int:
+    from bg3loc.research.dialogue_policy_run import run_evaluation
+    report = run_evaluation(Path(args.evidence_dir), Path(args.source_snapshot), Path(args.batch_plan),
+                            Path(args.output_dir), pilot=args.prepare_pilot)
+    print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+    return 0
 
 
 def run_dialogue_audit(args: argparse.Namespace) -> int:

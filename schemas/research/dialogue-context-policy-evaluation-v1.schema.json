@@ -1,0 +1,668 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Research dialogue policy aggregate evaluation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "policies",
+    "inputs",
+    "edgeVerdicts",
+    "recommendation",
+    "verdicts",
+    "status",
+    "providerCalls",
+    "productionIntegration"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "dialogue-policy-evaluation/1"
+    },
+    "policies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "A",
+        "B1",
+        "B2",
+        "B3",
+        "C1",
+        "C2"
+      ],
+      "properties": {
+        "A": {
+          "$ref": "#/$defs/policy"
+        },
+        "B1": {
+          "$ref": "#/$defs/policy"
+        },
+        "B2": {
+          "$ref": "#/$defs/policy"
+        },
+        "B3": {
+          "$ref": "#/$defs/policy"
+        },
+        "C1": {
+          "$ref": "#/$defs/policy"
+        },
+        "C2": {
+          "$ref": "#/$defs/policy"
+        }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase1SemanticFingerprints",
+        "corpus",
+        "englishSnapshotSHA256",
+        "inventoryFingerprint",
+        "batchPlanSHA256"
+      ],
+      "properties": {
+        "phase1SemanticFingerprints": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "dialogue",
+            "node",
+            "occurrence",
+            "edge",
+            "targetEvidence"
+          ],
+          "properties": {
+            "dialogue": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "node": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "occurrence": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "edge": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "targetEvidence": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "corpus": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "appId": {
+              "type": "string"
+            },
+            "buildId": {
+              "type": "string"
+            },
+            "gameVersion": {
+              "type": "string"
+            }
+          }
+        },
+        "englishSnapshotSHA256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "inventoryFingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "batchPlanSHA256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "edgeVerdicts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "child",
+        "jumptarget",
+        "SourceNode",
+        "NestedDialogNodeUUID"
+      ],
+      "properties": {
+        "child": {
+          "type": "string"
+        },
+        "jumptarget": {
+          "type": "string"
+        },
+        "SourceNode": {
+          "type": "string"
+        },
+        "NestedDialogNodeUUID": {
+          "type": "string"
+        }
+      }
+    },
+    "recommendation": {
+      "enum": [
+        "A",
+        "NONE"
+      ]
+    },
+    "verdicts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "A",
+        "B",
+        "C1",
+        "C2"
+      ],
+      "properties": {
+        "A": {
+          "type": "string"
+        },
+        "B": {
+          "type": "string"
+        },
+        "C1": {
+          "type": "string"
+        },
+        "C2": {
+          "type": "string"
+        }
+      }
+    },
+    "status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policyEvaluation",
+        "safetyValidation",
+        "productionIntegration"
+      ],
+      "properties": {
+        "policyEvaluation": {
+          "type": "string"
+        },
+        "safetyValidation": {
+          "type": "string"
+        },
+        "productionIntegration": {
+          "type": "string"
+        }
+      }
+    },
+    "providerCalls": {
+      "const": 0
+    },
+    "productionIntegration": {
+      "const": false
+    },
+    "pilot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "sampleSize",
+        "requestCount",
+        "policy",
+        "strata",
+        "sampleFingerprint",
+        "requestFingerprint",
+        "translationSource",
+        "translationsReceived",
+        "safetyValidation",
+        "providerCalls"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "dialogue-policy-evaluation/1"
+        },
+        "sampleSize": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 25
+        },
+        "requestCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 50
+        },
+        "policy": {
+          "const": "A"
+        },
+        "strata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "sampleFingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "requestFingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "translationSource": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "translationsReceived": {
+          "const": 0
+        },
+        "safetyValidation": {
+          "const": "PENDING"
+        },
+        "providerCalls": {
+          "const": 0
+        }
+      }
+    }
+  },
+  "$defs": {
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "targets",
+        "withContext",
+        "withoutContext",
+        "gainVsA",
+        "lostVsA",
+        "coveragePercent",
+        "additionalMultiplePredecessorTargetsVsA",
+        "additionalMultipleSuccessorTargetsVsA",
+        "directions",
+        "lineCardinality",
+        "byCategory",
+        "speakerEvidence",
+        "speakerRelations",
+        "absenceReasons",
+        "traversalDiagnostics",
+        "choiceProxyRelations",
+        "nodeTypeCensus",
+        "sourceBudgetSimulation",
+        "predecessorAlternatives",
+        "successorAlternatives",
+        "contextLineCount",
+        "sourceChars",
+        "addedRenderedChars",
+        "speakerOverheadChars"
+      ],
+      "properties": {
+        "targets": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "withContext": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "withoutContext": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "gainVsA": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lostVsA": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "coveragePercent": {
+          "type": "number",
+          "minimum": 0
+        },
+        "additionalMultiplePredecessorTargetsVsA": {
+          "type": "integer"
+        },
+        "additionalMultipleSuccessorTargetsVsA": {
+          "type": "integer"
+        },
+        "directions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "lineCardinality": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5+"
+          ],
+          "properties": {
+            "0": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "1": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "2": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "3": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "4": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "5+": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "byCategory": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "dialogue_general": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "bark": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        },
+        "speakerEvidence": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "speakerRelations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "absenceReasons": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "traversalDiagnostics": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "choiceProxyRelations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "nodeTypeCensus": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "target",
+            "predecessors",
+            "successors"
+          ],
+          "properties": {
+            "target": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "predecessors": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "successors": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        },
+        "sourceBudgetSimulation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "1000",
+            "2000",
+            "4000"
+          ],
+          "properties": {
+            "1000": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "wouldExcludeTargets",
+                "noTruncationApplied"
+              ],
+              "properties": {
+                "wouldExcludeTargets": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "noTruncationApplied": {
+                  "const": true
+                }
+              }
+            },
+            "2000": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "wouldExcludeTargets",
+                "noTruncationApplied"
+              ],
+              "properties": {
+                "wouldExcludeTargets": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "noTruncationApplied": {
+                  "const": true
+                }
+              }
+            },
+            "4000": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "wouldExcludeTargets",
+                "noTruncationApplied"
+              ],
+              "properties": {
+                "wouldExcludeTargets": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "noTruncationApplied": {
+                  "const": true
+                }
+              }
+            }
+          }
+        },
+        "predecessorAlternatives": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mean",
+            "p95",
+            "max"
+          ],
+          "properties": {
+            "mean": {
+              "type": "number",
+              "minimum": 0
+            },
+            "p95": {
+              "type": "number",
+              "minimum": 0
+            },
+            "max": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "successorAlternatives": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mean",
+            "p95",
+            "max"
+          ],
+          "properties": {
+            "mean": {
+              "type": "number",
+              "minimum": 0
+            },
+            "p95": {
+              "type": "number",
+              "minimum": 0
+            },
+            "max": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "contextLineCount": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mean",
+            "p95",
+            "max"
+          ],
+          "properties": {
+            "mean": {
+              "type": "number",
+              "minimum": 0
+            },
+            "p95": {
+              "type": "number",
+              "minimum": 0
+            },
+            "max": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "sourceChars": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mean",
+            "p95",
+            "max"
+          ],
+          "properties": {
+            "mean": {
+              "type": "number",
+              "minimum": 0
+            },
+            "p95": {
+              "type": "number",
+              "minimum": 0
+            },
+            "max": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "addedRenderedChars": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mean",
+            "p95",
+            "max"
+          ],
+          "properties": {
+            "mean": {
+              "type": "number",
+              "minimum": 0
+            },
+            "p95": {
+              "type": "number",
+              "minimum": 0
+            },
+            "max": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "speakerOverheadChars": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mean",
+            "p95",
+            "max"
+          ],
+          "properties": {
+            "mean": {
+              "type": "number",
+              "minimum": 0
+            },
+            "p95": {
+              "type": "number",
+              "minimum": 0
+            },
+            "max": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    }
+  }
+}
