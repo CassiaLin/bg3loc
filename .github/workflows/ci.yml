@@ -1,31 +1,62 @@
 name: CI
 
+# No path filters: schemas, docs, examples, manifests and workflow changes
+# must receive the same tests as Python changes.
 on:
   pull_request:
-    paths:
-      - "src/**"
-      - "tests/**"
-      - "pyproject.toml"
-      - ".github/workflows/ci.yml"
+  push:
   workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+    name: ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-          cache: "pip"
-      - name: Install package
-        run: python -m pip install -e .
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install runtime and explicit test dependencies
+        run: python -m pip install -e ".[test]"
       - name: Compile
-        run: python -m compileall -q src
-      - name: Test
-        run: python -m unittest discover -s tests -v
+        run: python -m compileall -q src tools/ci
+      - name: Diagnose real loopback HTTP capability
+        run: python tools/ci/check_loopback.py
+      - name: Collect all pytest tests
+        if: ${{ !cancelled() }}
+        run: python -m pytest --collect-only -q
+      - name: Test all public synthetic tests (including HTTP demo)
+        if: ${{ !cancelled() }}
+        run: python -m pytest -ra --junitxml=workspace/ci-artifacts/checkout.xml
+      - name: Source distribution to wheel to clean installation and full tests
+        if: ${{ !cancelled() }}
+        run: python tools/ci/verify_distribution.py --output workspace/ci-artifacts/distribution
+      - name: Summarize test counts
+        if: ${{ !cancelled() }}
+        run: python tools/ci/summarize_tests.py workspace/ci-artifacts/checkout.xml workspace/ci-artifacts/distribution/tests.xml
+      - name: Upload diagnostics and JUnit (including failures)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: tests-${{ matrix.os }}-${{ matrix.python }}
+          path: |
+            workspace/ci-artifacts/*.xml
+            workspace/ci-artifacts/distribution/*.json
+            workspace/ci-artifacts/distribution/*.txt
+            workspace/ci-artifacts/distribution/*.xml
+          if-no-files-found: warn

@@ -5,6 +5,17 @@
 graft docs
 graft schemas
 graft examples
+graft tests
+graft scripts
+graft tools/ci
+include .github/workflows/ci.yml
+
+# Only public source/test resources belong in distributions.
+prune workspace
+prune build
+prune dist
+prune .venv
+global-exclude *.py[cod] *.pak *.loca *.sqlite *.sqlite3 *.db *.dll *.exe
 
 include README.md
 include README.zh-TW.md

@@ -18,6 +18,14 @@ dependencies = [
   "openpyxl>=3.1,<4"
 ]
 
+[project.optional-dependencies]
+test = [
+  "pytest>=9,<10",
+  "build>=1.4,<2",
+  "setuptools>=77.0.3",
+  "PyYAML>=6,<7"
+]
+
 [project.urls]
 Repository = "https://github.com/CassiaLin/bg3loc"
 Issues = "https://github.com/CassiaLin/bg3loc/issues"
