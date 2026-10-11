@@ -4,10 +4,10 @@
 
 《柏德之門 3》的檔案被打包在 **.pak**（遊戲的壓縮包裝檔）中，並編碼在 **.loca**（遊戲的語言檔）裡。bg3loc 使用外部的「後端工具」來打開它們。
 
-目前，我們驗證過的環境是 Windows 11 搭配名為 LSLib 的第三方解包工具（具體來說是 Norbyte 製作的 `Divine.exe` v1.20.4）。或者，我們也可以透過 .NET 使用 `Divine.dll` 來支援跨平台操作。
+既有 Native 證據使用 Windows 11 與 Norbyte LSLib（`Divine.exe` v1.20.4）。程式也有 .NET `Divine.dll` 後端，但尚未完成 Linux／macOS Native 發布驗收。第一版 Basic RC 以 Windows 為範圍，真實安裝及遊戲載入驗收仍待完成。
 
 ⚠️ **需要自行下載**
-bg3loc **不包含** `Divine.exe`。您必須自行下載。設定時，請建立一個名為 `BG3LOC_DIVINE_EXE` 的環境變數，並將其指向您的 `Divine.exe` 檔案。
+bg3loc **不包含** LSLib。請由 [Norbyte 專案](https://github.com/Norbyte/lslib) 取得，保留整份工具及 runtime 檔案，將 `BG3LOC_DIVINE_EXE` 指向實際的 `Divine.exe`，不是圖形介面轉換器。Basic 後續來源／baseline 重驗仍需要此後端。參閱 [Windows Basic 入門](../getting-started.zh-TW.md)；路徑僅為示例，其他後端版本不代表自動取得驗收。
 
 ## 後端工具如何運作
 後端工具會執行幾個特定的操作來處理您的遊戲檔案：

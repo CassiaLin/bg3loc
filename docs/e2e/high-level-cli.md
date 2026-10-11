@@ -1,8 +1,59 @@
-# E2E-01E | High-level CLI Contract
+# Windows Basic | High-level CLI
 
-[繁體中文（台灣）](high-level-cli.zh-TW.md)
+[繁體中文（台灣）](high-level-cli.zh-TW.md) · [Tutorial](../getting-started.md)
 
-## Status
+Current M2-B1/B2 behavior is documented here. The tutorial stops at read-only Dry-run. Apply/Rollback and stable-release acceptance are still pending.
+
+## Command reference
+
+All project/workflow commands default to `bg3loc-project.json`. Use `--project <FILE>` when it has a different name/location; `project init` uses `--output`, not `--project`.
+
+| Command | Actual options and behavior |
+| --- | --- |
+| `project init` | Required `--name --source --target`; optional `--game-dir`, repeated `--content-uid`/`--reference`, `--format xlsx|jsonl|csv`, `--workspace`, `--output`; default profile `basic`, strategy `standard`. Refuses existing config. |
+| `project check` | `--project`; schema/path/role/scope checks. Does not prepare materials or prove current game hashes. |
+| `workflow prepare` | `--project`; own scan/extract, source receipt, package and return copies. No `--scan`, `--source`, `--force` or `--format` option here. |
+| `workflow validate` | `--project`, optional `--input <FILE_OR_DIRECTORY>`; current package/input receipt and technical QA. Explicit input is the validated location. No direct AI response importer. |
+| `workflow rebuild` | `--project`; exact current accepted snapshot and unchanged input/artifacts required. Uses automatic container selection; there is no high-level `--container` or `--output`. Prints artifact path. |
+| `workflow install` | `--project`; default read-only dry-run, fresh preflight each invocation. There is no high-level `--dry-run` option. `--apply` changes game files and needs separate acceptance/authorization. |
+| `workflow status` | `--project`; reads state and prints progress/paths. Not a full live preflight. |
+
+`workflow review prepare/integrate/resolve` and context/full profiles are advanced; Basic's default structural review set and language ruleSets are empty. Basic technical validation still checks required rows, immutable identity/source, placeholders and markup. It does not silently run Quest/UI/spelling/semantic review and does not create a Production execution database.
+
+## Return fields
+
+Edit generated `returns/*.xlsx` or `returns/*.jsonl`, not package `delivery/` baselines. Complete `ProposedTargetText` and `TranslationStatus=translated`; notes/name are optional. Keep `ContentUid`, locales, `SourceText`, `PresenceStatus`, `TranslationRequired`, protected tokens, evidence/context/comparison fields and any generated versions unchanged. Keep workbook headers; preserve JSONL types and one object per line. `intentionally-empty` is an explicit empty-target decision, not a way to bypass unfinished translation. See [synthetic examples](../../examples/windows-basic/README.md).
+
+Repeated `--content-uid` at project creation selects source UIDs for a small pilot. All selected required rows must be returned. Full source/target baselines are still read, and a complete LOCA/PAK is rebuilt with other content preserved. This does not infer dialogue relationships or install only a single filesystem line. With no scope, all available rows are selected.
+
+## Source receipt and current eligibility
+
+Prepare automatically generates `package/internal/bindings/basic-source-baseline.json` under `workspace/e2e/`. This internal receipt binds source/target/reference PAK, Scan/Extract, full normalized/XML/LOCA and aligned inputs. It stays local and must not be edited, supplied to external AI, or fabricated for an old workspace. Later validation/rebuild/install require original paths and bytes plus source re-verification; Divine must remain available. Changed inputs require fresh preparation, not a new hash written into old evidence.
+
+Current eligibility is separate from historical success. New validation starts/fails/interruption revoke downstream eligibility; edited returns need a new Validate. Unchanged eligible inputs may reuse validated/rebuilt snapshots, but Basic dry-run always performs current artifact/destination checks. A visible history path does not mean the workflow is eligible.
+
+Runtime state is `workspace/e2e/workflow-state.json`; `e2e-workflow-state.schema.json` is its public definition, not the runtime file. Consult current stage status and CLI output. Artifacts/history aliases may retain the last successful result after current eligibility is revoked.
+
+| Location under `workspace/e2e/` | Meaning |
+| --- | --- |
+| `validation/snapshots/<operation>/` | Distinct validation snapshots/diagnostics; failed validation does not overwrite prior successful accepted bytes |
+| `rebuild/pending-<operation>/` | Candidate in progress; not current success |
+| `rebuild/history/<operation>/` | Successful artifact snapshot; current eligibility still required |
+| `rebuild/failed/<operation>/` | Isolated failed candidate; never treat partial LOCA/old manifest as this run's success |
+
+Use `artifacts.rebuildManifest` and the printed artifact path instead of hardcoding `rebuild/rebuild-manifest.json`. Do not delete/edit state or manually promote failed output. Historical results are retained, so disk usage grows; automatic history cleanup is not implemented.
+
+## Failure recovery and write boundary
+
+Fix return errors and rerun Validate → Rebuild → Dry-run. For game/source updates, changed/missing baseline, old missing receipt, or edited returns belonging to an older package, preserve the old project and create a fresh workspace. Manually rebase only after checking current UID/source/version; no automatic migration or historical backfill. See [tutorial recovery](../getting-started.md#recovery).
+
+Dry-run writes project evidence only: no game writes or game backup. It does not certify game loading, semantics, crash safety or a stable release. `workflow install --apply` and standalone `install --rollback <MANIFEST>` write game files; a separate explicit plan/acceptance is required. Low-level `install` defaults to apply without `--dry-run` and has no current workflow eligibility gate. A historical package may pass standalone preflight while the workflow is blocked; do not use low-level commands as fallback.
+
+Production/Provider, B1-02, context/full research review and Legacy Production Finalize are outside the first Windows Basic RC acceptance. B1-03 stays OFF with production transport blocked. Single operator, stable original paths and Windows scope remain; detached portability, concurrent writers/updates, native Linux/macOS and general dialogue semantic safety are not certified.
+
+## Historical E2E-01E record
+
+The following original milestone record is retained. Its historical synthetic acceptance/count is not the current Basic RC release verdict; current evidence/gates are in the [M3 report](../research/bg3loc-mainline-m3-public-docs-rc-readiness.md).
 
 ```text
 Milestone: End-to-End Translation Workflow 01E
@@ -10,114 +61,6 @@ State: ACCEPTED
 Depends on: E2E-01A / 01B / 01C / 01D ACCEPTED
 Core reopening: no
 ```
-
-## Commands (The Tools You'll Actually Use)
-
-Here is a list of the simple commands you type into your command line (like PowerShell) to make the magic happen:
-
-```text
-bg3loc project init
-bg3loc project check
-bg3loc workflow prepare
-bg3loc workflow validate
-bg3loc workflow review prepare      # Advanced
-bg3loc workflow review integrate    # Advanced
-bg3loc workflow review resolve      # Fixing text fights
-bg3loc workflow rebuild
-bg3loc workflow install
-bg3loc workflow status
-```
-
-By default, all these commands look for your `bg3loc-project.json` settings file.
-
----
-
-## project init
-
-**What it does:** Creates your `bg3loc-project.json` settings file. 
-You tell it your project name, the language you are translating from, and the language you are translating to. It safely refuses to overwrite an existing project file so you don't accidentally delete your settings.
-
-## project check
-
-**What it does:** Reads your settings file and makes sure everything makes sense (like making sure you didn't set your source and target to the exact same language). It does not touch your game files.
-
----
-
-## Scoped clean-room / subset projects (Translating just a tiny bit)
-
-If you only want to translate one specific line of text to test things out, you can run `project init` and add `--content-uid <uid>`. 
-
-The tool will still scan the whole game to understand how that line connects to everything else, but it will only give you that **one specific line** to translate, and it will only validate and install that one specific line. (Right now, this only works if your profile is `basic` or `context`).
-
----
-
-## workflow prepare
-
-```text
-config → scan → extract → evidence → translation package → external translation boundary
-```
-
-**What it does:** Does all the heavy lifting to get your files ready. 
-It checks your settings, scans the game, extracts the text, gathers background context, and builds your Excel spreadsheets. 
-
-**It is incredibly safe.** If you already started translating and run this command again, it will **never** overwrite the files you've already typed translations into.
-
----
-
-## workflow validate
-
-```text
-returned translation → structural review validation → reconciliation → language QA → reconciliation → final validation
-```
-
-**What it does:** Checks your homework. 
-It reads your filled-out spreadsheets and verifies that you didn't break anything. It automatically runs any Quest, UI, or Spelling checks you asked for.
-
-If a check finds something wrong, validation stops and tells you what to fix.
-
-If two different checks disagree on a translation (a conflict), validation fails. You have to create a tiny file called `manual-resolutions.jsonl` to tell the tool which translation is correct, and then run:
-```powershell
-bg3loc workflow review resolve --input manual-resolutions.jsonl
-bg3loc workflow validate
-```
-
-Once everything is fixed, it does a final safety check on the internal game code.
-
----
-
-## workflow rebuild
-
-**What it does:** Packs your finished, validated text back into the `.loca` format that the game engine can read. 
-(It will refuse to run if you haven't passed `workflow validate` yet!)
-
----
-
-## workflow install
-
-**What it does:** Modifies your game! 
-
-**Safety first:** By default, running this command just does a "dry run" (a practice run) to make sure it won't crash. 
-If you actually want to install your translation into Baldur's Gate 3, you **must** type `--apply`. 
-
----
-
-## workflow status
-
-**What it does:** Tells you what's going on! It prints out your current step, what profile you are using, and if you are blocked by an error. It's safe to run anytime because it doesn't change anything.
-
----
-
-## Runtime state (How it remembers things)
-
-The tool keeps track of its progress in a secret `e2e-workflow-state.schema.json` file. 
-
-If the game gets an update, the tool notices that the file hashes changed. It marks your current progress as "invalidated", letting you know you need to run `workflow prepare` again to sync up with the new game version. It will never silently repeat a real installation.
-
----
-
-## Acceptance
-
-*(Technical checklist for developers ensuring all the commands work correctly and safely. All checked off!)*
 
 ```text
 Synthetic public CLI E2E acceptance: PASS

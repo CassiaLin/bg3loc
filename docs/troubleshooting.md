@@ -1,6 +1,22 @@
 # Troubleshooting
 
-[Start here](getting-started.md). Run `bg3loc production report --workspace production` whenever you need current progress. Use `bg3loc --verbose ...` for diagnostic output; redact paths, game text, and credentials before sharing logs.
+[Start with Windows Basic](getting-started.md) / [繁體中文](getting-started.zh-TW.md). Use `bg3loc workflow status` for recorded Basic progress; status is not a live integrity check. Stop on failure and redact paths, game text and credentials before sharing errors.
+
+## Windows Basic
+
+| Symptom | Recovery |
+| --- | --- |
+| Missing Divine/backend | Keep the whole LSLib distribution and set the actual `BG3LOC_DIVINE_EXE` path. Backend availability is also required during later source re-verification. |
+| Source/baseline integrity or missing receipt | Preserve edited returns; create a fresh project/workspace using current game materials. Never fabricate a receipt or rewrite hashes. |
+| Validate FAIL or changed returns | Fix allowed target/status fields, save and close files, then rerun Validate → Rebuild → Dry-run. Historical success no longer grants current eligibility. |
+| Rebuild failure | Do not use pending/failed outputs. Fix the cause and rerun with current validated inputs. Follow the printed artifact path, not an old fixed filename. |
+| Dry-run rejects a changed artifact/destination | Re-establish current materials and validation; do not use low-level install as a bypass. No `--apply` or rollback is authorized by a Dry-run PASS. |
+
+See [full recovery steps](getting-started.md#recovery). The Basic workflow does not require research mappings, Production SQLite or provider credentials.
+
+## Advanced Production diagnostics — outside Basic RC acceptance
+
+The following reference concerns advanced Production commands, not the Basic recovery path. Legacy Production Finalize, automatic Provider execution and context policies are outside the first Basic release scope; B1-03 remains OFF with transport blocked. Its retained instructions do not grant activation or certify a stable release. For that separate workflow, `bg3loc production report --workspace production` reports recorded progress. Use `bg3loc --verbose ...` only with redacted diagnostic sharing.
 
 | Symptom | Meaning | Next step |
 | --- | --- | --- |

@@ -2,67 +2,66 @@
 
 [English](README.md)
 
-BG3Loc 協助翻譯團隊從**自己合法安裝的《柏德之門 3》**提取文字、翻譯、檢查、重建語言檔，並在備份後安裝。1.3.0 版新增 production 流程，支援續跑 provider、人工審核與進度報表。
+BG3Loc 從你自己安裝的《柏德之門 3》準備翻譯素材、檢查回填成果並重建語言檔。第一次使用請走 **Windows Basic**：少量 UID、人工或外部 AI 翻譯、XLSX／JSONL 回填、Validate、Rebuild、唯讀安裝 Dry-run。
 
-Repository 不包含遊戲文本、官方翻譯、遊戲封裝檔或第三方 LSLib 解壓工具；請自行取得遊戲與 LSLib。Windows 是主要驗證平台；Linux/Proton 與 macOS 的真實遊戲驗證較少。
+目前正準備 Windows Basic Release Candidate。**Stable Release 與真實遊戲 Apply／Rollback 驗收仍待完成。** 技術驗證不判斷翻譯品質，也不代表產物已通過遊戲內載入測試。
 
-## 從這裡開始
+## 從 Windows Basic 開始
 
-安裝 Python 3.11 以上及 [LSLib / Divine](docs/concepts/archive-backends.zh-TW.md)。在此 checkout 開啟 PowerShell：
+需要自己的 BG3 安裝、Python 3.11 以上（範例使用 3.12），以及自行取得的 [LSLib／Divine backend](docs/concepts/archive-backends.zh-TW.md)。工具不附遊戲文本、官方翻譯、PAK／LOCA、憑證或 LSLib。
+
+在此 checkout 的 PowerShell 執行：
 
 ```powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install .
 bg3loc --version
+$env:BG3LOC_DIVINE_EXE = 'C:\Tools\LSLib\Packed\Tools\Divine.exe'
+Test-Path -LiteralPath $env:BG3LOC_DIVINE_EXE
 ```
 
-沒有 `py -3.12` 時，可用支援版本的 `python -m venv .venv`。把 `BG3LOC_DIVINE_EXE` 設為自行下載的 `Divine.exe` 路徑。翻譯專案請放在 source checkout 外。下方 `<BG3_INSTALL>` 代表自己的遊戲目錄；Steam 常見的 `C:\Program Files (x86)\Steam\steamapps\common\Baldurs Gate 3` **只是例子**。
+請填入實際下載的 `Divine.exe` 路徑，上方只是例子。專案放在遊戲目錄與 repository 外。[新手指南](docs/getting-started.zh-TW.md)會先带你查看已安裝語言、從自己的 source extract 選出真實 UID，再建立小範圍專案。
 
-```text
-my-bg3-localization/
-  scan/
-  extract/
-  research/
-  ruleset.json
-  production/
-  output/
+選好兩個 UID 後，在專案目錄執行；所有 placeholder 都必須替換，English／French 只是語言例子：
+
+```powershell
+bg3loc project init --name 'Basic pilot' --game-dir '<BG3_INSTALL>' --source English --target French --evidence-profile basic --translation-strategy standard --format xlsx --content-uid '<UID_1>' --content-uid '<UID_2>'
+bg3loc project check
+bg3loc workflow prepare
+# 編輯 workspace/e2e/returns/*.xlsx；建立專案時可改用 --format jsonl。
+bg3loc workflow validate
+bg3loc workflow rebuild
+bg3loc workflow install
+bg3loc workflow status
 ```
 
-最短 production 路徑：
+`workflow prepare` 會自行 scan／extract。Basic 不自動呼叫 Provider；在工具外翻譯，保留生成的 UID／source 等欄位，把譯文填入 `ProposedTargetText`，`TranslationStatus` 設為 `translated`，保留 runtime placeholders 與 markup。詳見[回填欄位與 CLI](docs/e2e/high-level-cli.zh-TW.md)及[虛構範例](examples/windows-basic/README.md)。
 
-| 步驟 | 指令 | 產物 |
-| --- | --- | --- |
-| 找遊戲 | `bg3loc scan --game-dir <BG3_INSTALL> --output scan` | `scan/scan-manifest.json` |
-| 提取語言 | `bg3loc extract --scan scan/scan-manifest.json --source English --target French --output extract` | `extract/extract-manifest.json`、`extract/normalized/English.jsonl` |
-| 產生脈絡 | `bg3loc research scan --game-dir <BG3_INSTALL> --source English --target French --output research/scan.json`，再執行 `bg3loc research map --scan research/scan.json --output-dir research` | `research/research-mappings.jsonl` 與可選脈絡 ledger |
-| 準備 | `bg3loc production prepare --extract extract/extract-manifest.json --source extract/normalized/English.jsonl --research-mappings research/research-mappings.jsonl --ruleset ruleset.json --output production` | `production/production-manifest.json` |
-| 翻譯 | `bg3loc production execute-openai-compatible --workspace production --base-url <ENDPOINT> --model <MODEL> --run-id run-001 --worker-id worker-01` | 保存的 attempts 與譯文 |
-| 檢查與審核 | `bg3loc production qa --workspace production` | QA routes；REVIEW 由人決定 |
-| 查進度 | `bg3loc production report --workspace production` | 進度、錯誤、provider 回報的 token usage |
-| Finalize | `bg3loc production finalize --workspace production --output output` | 驗證過的語言檔與 rebuild manifest |
-| 安裝 | `bg3loc install --rebuild output/rebuild/rebuild-manifest.json --scan scan/scan-manifest.json --dry-run` | 安裝前檢查；確認後才去掉 `--dry-run` |
+`--content-uid` 只限制翻譯列，仍會讀完整語言 baseline 並重建完整語言封裝；不加此參數會選取全部列。Rebuild 印出當前 artifact 路徑，請使用它或 workflow state，不要猜舊檔名。
 
-請用自己遊戲安裝中的 source/target locale 取代 English/French；目標語言不限繁中。複製並調整 [ruleset 範例](docs/lstp/ruleset-example.json)，讓 locale IDs 與 extract 一致；詳見 [ruleset 指南](docs/ruleset-guide.md)。OpenAI-compatible endpoint 必須支援 `/v1/chat/completions`；本機 endpoint 也可能適用，但各實作相容性不同。遠端 API key 請由 secret manager 設定到 `BG3LOC_API_KEY` 環境變數，不要放入命令參數。Pricing 為可選。
+## 當前成果與復原
 
-[新手指南](docs/getting-started.md)提供可執行的 PowerShell 指令、每個檔案的來源，以及 research input 與人工決議的說明。小型人工 spreadsheet 專案可參考[基本流程](docs/e2e/high-level-cli.zh-TW.md)。
+Basic 核對 Prepare 時封存的 source／baseline receipt、當前回填雜湊、確切 accepted validation snapshot、重建 artifact 雜湊與 fresh destination preflight。Validation 失敗或輸入改變會撤銷當前安裝資格；歷史成功成果仍保留，pending／failed 輸出隔離保存，不能代表目前流程成功。
 
-## 安全與復原
+修改回填後重跑 Validate → Rebuild → Dry-run。遊戲／來源更新、舊 Workspace 缺 receipt、Extract／baseline 改動時，保留舊專案與回填，改用**新 Workspace** Prepare，再人工核對 UID／source／version 搬入可沿用的譯文。不要手動建立 receipt 或修改 hashes。詳見[復原](docs/getting-started.zh-TW.md#復原)。
 
-`scan`、`extract`、research、翻譯、QA、report 與 finalize 只寫專案輸出；只有 `install` 寫入遊戲。安裝前請自行備份遊戲與專案。先用 `install --dry-run` 檢查；真正安裝會建立備份及 rollback metadata，可用 `bg3loc install --rollback <INSTALL_MANIFEST>` 還原。安裝前關閉遊戲；遊戲更新後重新掃描並產生相依資料。
+## Dry-run 與遊戲寫入
 
-不知道進度時，隨時執行 `production report`。Finalize 要求所有**已分類的 production rows** 都是 `MERGE_READY`；`WAITING_TRANSLATION`、`WAITING_RETRY`、`WAITING_REVIEW`、`BLOCKED` 指出尚待處理的工作。未分類 rows 另行列出，若要宣稱整個語料完成，必須先由 operator 作出明確決議。
+`bg3loc workflow install` 不加 `--apply` 就是 Dry-run；檢查當前 state 與 destination，不建立遊戲備份、不修改遊戲檔，只寫專案 evidence。Dry-run 不等於遊戲內載入測試，也不是安裝授權。
 
-## 文件與求助
+`workflow install --apply` 與 `install --rollback` 會寫入遊戲，必須另行明確決定與驗收；**不屬於此指南要直接執行的步驟**。低階 `install` 若沒有 `--dry-run`，預設就會套用。不要用它繞過高階 workflow 失敗。
 
-- [新手與完整流程](docs/getting-started.md)
-- [Ruleset 指南](docs/ruleset-guide.md)
-- [疑難排解](docs/troubleshooting.md)
-- [大型專案操作指南](docs/lstp/large-scale-production-guide.md)
-- [CLI 文件](docs/cli/)與 `bg3loc --help`
-- [架構與 schema](docs/architecture.zh-TW.md)、[工程驗收歷史](docs/lstp/)
-- [虛構本機 demo](examples/demo/run_demo.py)（不需要遊戲檔或付費 provider）
+## 進階能力與發布限制
 
-請到 [GitHub Issues](https://github.com/CassiaLin/bg3loc/issues) 回報可重現的問題，附上指令、去識別的錯誤、平台及 BG3Loc 版本；不要上傳遊戲文本、API key 或私人 workspace。
+Production／自動 Provider、Legacy Production Finalize、B1-02 Same-Entity Context、context/full profile、研究型 review 都不在首版 Windows Basic 驗收範圍。B1-03 Dialogue Context 預設 OFF，production transport 仍封鎖。程式與研究保留不代表 RC 已啟用或驗收這些功能。
 
-授權條款：[MIT](LICENSE)。
+維持單一操作者並保留原 Extract／baseline 路徑；不承諾 detached portability、持續並行遊戲更新、Linux／macOS native 驗收、全語料翻譯或通用對話語意安全。RC 仍須 fresh wheel／sdist privacy audit、四個 hosted CI jobs、允許 socket 的真實 HTTP demo，以及另行授權的 Windows 遊戲載入／Apply／Rollback 證據。
+
+- [Windows Basic 新手指南](docs/getting-started.zh-TW.md)
+- [Basic 高階 CLI](docs/e2e/high-level-cli.zh-TW.md)
+- [保留的進階 Production 指南](docs/production-getting-started.md) — 不在 Basic RC 驗收範圍
+- [疑難排解](docs/troubleshooting.md)、[工程歷史](docs/lstp/)、[研究歷史](docs/research/)
+- [M3 文件與 RC 門檻報告](docs/research/bg3loc-mainline-m3-public-docs-rc-readiness.md)
+
+請在 [GitHub Issues](https://github.com/CassiaLin/bg3loc/issues) 提供指令、去識別錯誤、平台與版本；不要上傳遊戲文本、封裝、API key、生成的 receipt／returns 或私人 Workspace。授權條款：[MIT](LICENSE)。

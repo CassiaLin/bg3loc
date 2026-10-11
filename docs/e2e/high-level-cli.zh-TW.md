@@ -1,8 +1,59 @@
-# E2E-01E | 高階指令介面 (High-level CLI)
+# Windows Basic｜高階 CLI
 
-[English](high-level-cli.md)
+[English](high-level-cli.md) · [新手指南](../getting-started.zh-TW.md)
 
-## 狀態
+此頁反映已接受 M2-B1／B2 的當前行為，標準路徑停在唯讀 Dry-run；Apply／Rollback 與 Stable Release 驗收仍 pending。
+
+## 指令與實際參數
+
+Project／workflow 預設讀 `bg3loc-project.json`，不同位置用 `--project <FILE>`；`project init` 的輸出參數是 `--output`，不是 `--project`。
+
+| 指令 | 參數／行為 |
+| --- | --- |
+| `project init` | 必填 `--name --source --target`；可用 `--game-dir`、重複 `--content-uid`／`--reference`、`--format xlsx|jsonl|csv`、`--workspace`、`--output`。預設 basic／standard，拒絕覆寫 config。 |
+| `project check` | `--project`；驗 schema／路徑／角色／scope，不 Prepare，也不證明當前遊戲 hashes。 |
+| `workflow prepare` | `--project`；自行 scan/extract、receipt、package、returns。此處沒有 `--scan`、`--source`、`--force` 或 `--format`。 |
+| `workflow validate` | `--project`、可選 `--input <FILE_OR_DIRECTORY>`；current input／receipt／technical QA，綁定實際 explicit input，不直接匯入一般 AI response。 |
+| `workflow rebuild` | `--project`；要求 current accepted snapshot，使用 auto container。沒有高階 `--container` 或 `--output`，會印 artifact 路徑。 |
+| `workflow install` | `--project`；預設每次 fresh dry-run。沒有高階 `--dry-run`；`--apply` 才寫遊戲，須另行授權／驗收。 |
+| `workflow status` | `--project`；讀 state 印進度與 paths，不是完整 live preflight。 |
+
+`workflow review prepare/integrate/resolve`、context/full 是進階。Basic 預設 structural review set／language ruleSets 為空；仍有 required rows、immutable identity/source、placeholders／markup 的技術驗證，不會自動執行 Quest／UI／拼字／語意審查，也不建立 Production DB。
+
+## 回填與 UID scope
+
+只改 `returns/*.xlsx`／`returns/*.jsonl` 生成副本，不改 package delivery baseline。填 `ProposedTargetText`、`TranslationStatus=translated`；notes/name 選填。`ContentUid`、locale、原文、presence、required flag、tokens、evidence/context/comparison，以及生成的 versions 保持原樣。XLSX 留原欄名；JSONL 留型別及每行一個 object。`intentionally-empty` 是明確空譯決定，不能拿來略過未做工作。[虛構範例](../../examples/windows-basic/README.md)不可當作真實專案輸入。
+
+建立專案時重複 `--content-uid` 只限制翻譯列，選中 required rows 都須回填；仍讀完整語言 baseline，重建完整 LOCA／PAK 並保留其他內容。不是只在檔案系統安裝一行文字，不推斷對話關係。沒有 scope 時選全部列。
+
+## Receipt 與當前资格
+
+Prepare 在 `workspace/e2e/package/internal/bindings/basic-source-baseline.json` 自動封存 receipt，綁定原 source/target/reference PAK、Scan/Extract、完整 normalized/XML/LOCA/aligned。Internal 只留本機，不編輯、不交外部 AI、不手工替舊 workspace 補 evidence。後續驗證／重建／install 要核對原 paths／bytes 與 origin，仍需 Divine。改動來源須 fresh Prepare，不寫新 hash 來假裝舊素材合法。
+
+Current eligibility 與歷史成功不同。新 validation 開始／失敗／中斷撤銷下游資格；回填改動須重新 Validate。未改且合法的 validated/rebuilt snapshot 可重用，但 Basic dry-run 每次檢查當前 artifact／destination，不能直接回報 cached PASS。磁碟有歷史檔不等於當前可安裝。
+
+Runtime file 是 `workspace/e2e/workflow-state.json`；`e2e-workflow-state.schema.json` 只是 public 定義。看 current stage status 與 CLI output；artifacts/history aliases 可保留 last success，即使 current eligibility 已撤銷。
+
+| `workspace/e2e/` 下位置 | 含義 |
+| --- | --- |
+| `validation/snapshots/<operation>/` | 獨立驗證 snapshot／diagnostics，FAIL 不覆寫 prior accepted bytes |
+| `rebuild/pending-<operation>/` | 處理中的候選，不是 current success |
+| `rebuild/history/<operation>/` | 成功 artifact snapshot，仍須 current eligibility |
+| `rebuild/failed/<operation>/` | 隔離失敗候選，partial LOCA／舊 manifest 不代表此次成功 |
+
+用 state 的 `artifacts.rebuildManifest` 與 CLI 印出的 path，不硬寫舊固定檔名。不要刪／改 state 或手動 promote failed files。History 不自動清理，磁碟用量會成長。
+
+## 復原與寫入邊界
+
+修正回填後 Validate → Rebuild → Dry-run。遊戲／來源更新、baseline 改／缺、舊 workspace 無 receipt、edited returns 屬於舊 package 時，保留舊專案，改用全新 workspace；核對 current UID/source/version 後人工 rebase。不會自動遷移或補 historical evidence。詳見[新手指南復原](../getting-started.zh-TW.md#復原)。
+
+Dry-run 只寫 project evidence，不寫遊戲、不建遊戲備份；不證明遊戲載入、語意、crash safety 或 Stable Release。`workflow install --apply`、`install --rollback <MANIFEST>` 會寫遊戲，須另行明確計畫／授權／验收。低階 `install` 沒 `--dry-run` 會預設 apply，也不檢查 current workflow；history package 可能獨立 preflight PASS，但不能自動繞過高階失敗。
+
+Production／Provider、B1-02、context/full research review、Legacy Production Finalize 不在第一版 Basic RC 範圍；B1-03 OFF、transport blocked。維持單一操作者／原路徑／Windows，不宣稱 detached portability、並行寫入／更新、native Linux/macOS 或通用對話語意安全。
+
+## 保留的 E2E-01E 歷史紀錄
+
+以下原 milestone 與歷史 synthetic count 保留，不代表當前 Basic RC release verdict。當前證據／門檻見 [M3 報告](../research/bg3loc-mainline-m3-public-docs-rc-readiness.md)。
 
 ```text
 Milestone: End-to-End Translation Workflow 01E
@@ -10,114 +61,6 @@ State: ACCEPTED
 Depends on: E2E-01A / 01B / 01C / 01D ACCEPTED
 Core reopening: no
 ```
-
-## 指令列 (您真正會用到的工具)
-
-以下是您要在指令列（像是 PowerShell）中輸入的簡單指令清單，用來施展魔法：
-
-```text
-bg3loc project init
-bg3loc project check
-bg3loc workflow prepare
-bg3loc workflow validate
-bg3loc workflow review prepare      # 進階操作
-bg3loc workflow review integrate    # 進階操作
-bg3loc workflow review resolve      # 解決文字衝突
-bg3loc workflow rebuild
-bg3loc workflow install
-bg3loc workflow status
-```
-
-預設情況下，所有這些指令都會去找您的 `bg3loc-project.json` 設定檔。
-
----
-
-## project init (初始化專案)
-
-**它的作用：** 建立您的 `bg3loc-project.json` 設定檔。
-您告訴它您的專案名稱、來源語言以及目標語言。為了防止您不小心刪除自己的設定，如果專案檔案已經存在，它會安全地拒絕覆蓋。
-
-## project check (檢查專案)
-
-**它的作用：** 讀取您的設定檔，確保所有內容都合乎邏輯（例如確保您沒有把來源和目標設定成一模一樣的語言）。它不會動到您的遊戲檔案。
-
----
-
-## 範圍限定專案 (只翻譯一小部分)
-
-如果您只想翻譯一句特定的台詞來測試看看，您可以在執行 `project init` 時加上 `--content-uid <uid>`。
-
-工具依然會掃描整個遊戲來了解那句話和其他東西的關聯，但它只會給您那**唯一一句話**去翻譯，而且它只會驗證並安裝那唯一一句話。（目前，這只在您的情境深度是 `basic` 或 `context` 時才有作用）。
-
----
-
-## workflow prepare (流程準備)
-
-```text
-config → scan → extract → evidence → translation package → external translation boundary
-```
-
-**它的作用：** 處理所有繁重的工作，把您的檔案準備好。
-它會檢查您的設定、掃描遊戲、提取文字、收集背景情境，並建立您的 Excel 試算表。
-
-**它超級無敵安全。** 如果您已經開始翻譯，然後又跑了一次這個指令，它**絕對不會**覆蓋掉您已經輸入翻譯的檔案。
-
----
-
-## workflow validate (流程驗證)
-
-```text
-returned translation → structural review validation → reconciliation → language QA → reconciliation → final validation
-```
-
-**它的作用：** 檢查您的作業。
-它會讀取您填寫完的試算表，並驗證您有沒有把任何東西搞壞。它會自動執行您要求的所有任務、介面或拼字檢查。
-
-如果檢查發現有錯，驗證會停止並告訴您該修復什麼。
-
-如果兩個不同的檢查對同一個翻譯意見不合（發生衝突），驗證就會失敗。您必須建立一個名為 `manual-resolutions.jsonl` 的小檔案，告訴工具哪一個翻譯才是對的，然後執行：
-```powershell
-bg3loc workflow review resolve --input manual-resolutions.jsonl
-bg3loc workflow validate
-```
-
-一旦所有東西都修復了，它會對遊戲內部的程式碼進行最終的安全檢查。
-
----
-
-## workflow rebuild (重建)
-
-**它的作用：** 把您完成且通過驗證的文字，重新打包成遊戲引擎看得懂的 `.loca` 格式。
-（如果您還沒通過 `workflow validate`，它會拒絕執行！）
-
----
-
-## workflow install (安裝)
-
-**它的作用：** 修改您的遊戲！
-
-**安全第一：** 預設情況下，執行這個指令只會進行「演習 (dry-run)」，以確保安裝時不會當機。
-如果您真的想把翻譯安裝進《柏德之門 3》裡，您**必須**輸入 `--apply`。
-
----
-
-## workflow status (狀態)
-
-**它的作用：** 告訴您現在狀況如何！它會印出您目前的步驟、您使用的情境深度，以及您是否被錯誤卡住了。任何時候執行它都很安全，因為它不會改變任何東西。
-
----
-
-## 執行時狀態 (它如何記住事情)
-
-工具會在一個祕密的 `e2e-workflow-state.schema.json` 檔案中追蹤進度。
-
-如果遊戲更新了，工具會注意到檔案雜湊值改變了。它會將您目前的進度標記為「已失效 (invalidated)」，讓您知道必須重新執行 `workflow prepare` 才能與新版本的遊戲同步。它絕對不會默默地重複進行真實的安裝。
-
----
-
-## 驗收清單
-
-*(開發人員確保所有指令都能正確且安全運作的技術清單。已全數打勾！)*
 
 ```text
 Synthetic public CLI E2E acceptance: PASS

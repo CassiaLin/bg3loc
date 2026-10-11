@@ -4,10 +4,10 @@
 
 Baldur's Gate 3's files are packed inside **.pak** files (the game's compressed package files) and encoded in **.loca** files (the game's language files). bg3loc uses external "backend" tools to open them. 
 
-Currently, our validated setup uses Windows 11 with a third-party unpacking tool called LSLib (specifically `Divine.exe` v1.20.4 by Norbyte). Alternatively, we can use `Divine.dll` via .NET for cross-platform support.
+Historical native evidence used Windows 11 with LSLib (`Divine.exe` v1.20.4 by Norbyte). A .NET `Divine.dll` backend is implemented, but native Linux/macOS release acceptance is not established. The first Basic RC targets Windows; its real-installation and game-load acceptance remain pending.
 
 ⚠️ **Download Required**
-bg3loc does NOT distribute `Divine.exe`. You must download it separately. To set it up, create an environment variable called `BG3LOC_DIVINE_EXE` and point it to your `Divine.exe` file.
+bg3loc does NOT distribute LSLib. Obtain it from the [Norbyte project](https://github.com/Norbyte/lslib), retain the entire distribution and runtime files, and set `BG3LOC_DIVINE_EXE` to the actual `Divine.exe` path (not the GUI converter). Basic also needs this backend for later source/baseline re-verification. See the [Windows Basic setup](../getting-started.md#1-install-the-tools); the example path is illustrative and other backend versions are not automatically certified.
 
 ## How the Backend Works
 The backend tool performs several specific operations to handle your game files:
