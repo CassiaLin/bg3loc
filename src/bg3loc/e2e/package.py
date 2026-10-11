@@ -11,6 +11,7 @@ from bg3loc.builder import write_material
 from bg3loc.io import read_json, write_json
 from bg3loc.protected_syntax import extract_protected_tokens
 from bg3loc.schema import SchemaStore
+from bg3loc.extractor import validate_material_locales, validate_material_projection
 
 
 def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
@@ -245,6 +246,7 @@ def prepare_translation_package(
     research_summary: Path | None = None,
     research_mappings: Path | None = None,
     scope_content_uids: set[str] | None = None,
+    baseline_binding: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     extract, aligned_path = resolve_extract_aligned(extract_manifest)
     aligned = read_jsonl(aligned_path)
@@ -267,6 +269,7 @@ def prepare_translation_package(
         for row in aligned
         if str(row.get("contentUid", ""))
     }
+    validate_material_locales(extract, aligned, extract_manifest.parent, scoped=scope_content_uids is not None)
     source_locale = str(extract["sourceLocale"])
     target_locale = str(extract["targetLocale"])
     references = [str(item) for item in extract.get("referenceLocales", [])]
@@ -411,6 +414,8 @@ def prepare_translation_package(
             "recordCount": len(immutable_batch),
         })
 
+    validate_material_projection(extract, aligned, rows)
+    validate_material_projection(extract, aligned, immutable_rows)
     comparison_path = internal_comparison / "comparison.jsonl"
     write_jsonl(comparison_path, comparison_rows)
     comparison_artifacts = [{
@@ -444,6 +449,13 @@ def prepare_translation_package(
         "researchSummarySha256": sha256_file(research_summary) if research_summary and research_summary.is_file() else None,
         "researchMappingsSha256": sha256_file(research_mappings) if research_mappings and research_mappings.is_file() else None,
     }
+    internal_bindings = []
+    if baseline_binding is not None:
+        from bg3loc.e2e.baseline import RECEIPT_PATH
+        SchemaStore().validate('basic-source-baseline-v1.schema.json', baseline_binding)
+        receipt_file = package_root / RECEIPT_PATH
+        write_json(receipt_file, baseline_binding)
+        internal_bindings.append({'path': RECEIPT_PATH, 'sha256': sha256_file(receipt_file)})
     manifest = {
         "schemaVersion": "1.0",
         "packageType": "E2ETranslationPackage",
@@ -480,7 +492,7 @@ def prepare_translation_package(
         "internal": {
             "immutable": immutable_artifacts,
             "comparison": comparison_artifacts,
-            "bindings": [],
+            "bindings": internal_bindings,
         },
         "validation": {
             "uniqueEditableIdentity": len(rows) == len({row["ContentUid"] for row in rows}),

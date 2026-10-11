@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BG3Loc Basic source and baseline receipt",
+  "type": "object",
+  "required": ["contractVersion", "scanManifestSha256", "extractManifestSha256", "sourceLocale", "targetLocale", "referenceLocales", "files"],
+  "properties": {
+    "contractVersion": {"const": "basic-source-baseline/1"},
+    "scanManifestSha256": {"$ref": "#/$defs/sha"},
+    "extractManifestSha256": {"$ref": "#/$defs/sha"},
+    "sourceLocale": {"type": "string", "minLength": 1},
+    "targetLocale": {"type": "string", "minLength": 1},
+    "referenceLocales": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "files": {"type": "array", "minItems": 11, "items": {
+      "type": "object", "required": ["role", "localeId", "path", "sizeBytes", "sha256"],
+      "properties": {
+        "role": {"enum": ["scan", "extract", "aligned", "pak", "normalized", "xml", "loca"]},
+        "localeId": {"type": ["string", "null"]},
+        "path": {"type": "string", "minLength": 1},
+        "sizeBytes": {"type": "integer", "minimum": 0},
+        "sha256": {"$ref": "#/$defs/sha"}
+      }, "additionalProperties": false
+    }}
+  },
+  "$defs": {"sha": {"type": "string", "pattern": "^[0-9a-f]{64}$"}},
+  "additionalProperties": false
+}

@@ -106,6 +106,10 @@ class ValidateV1Tests(unittest.TestCase):
         ]
         aligned.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows), encoding="utf-8")
         context = None
+        extract_data = json.loads(extract.read_text(encoding="utf-8"))
+        for locale in extract_data["locales"]:
+            locale["nodeCount"] = row_count
+        extract.write_text(json.dumps(extract_data), encoding="utf-8")
         if mode == "context":
             context = root / "context.json"
             context.write_text("{}\n", encoding="utf-8")

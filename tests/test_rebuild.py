@@ -5,6 +5,7 @@ import shutil
 import tempfile
 import unittest
 import xml.etree.ElementTree as ET
+import zipfile
 from pathlib import Path
 
 from bg3loc.backends import ArchiveEntry
@@ -21,32 +22,25 @@ class FakeRebuildBackend:
         raise NotImplementedError
 
     def list_archive(self, package: Path, expression: str = "*") -> list[ArchiveEntry]:
-        root = Path(str(package) + ".contents")
-        entries: list[ArchiveEntry] = []
-        if not root.is_dir():
-            return entries
-        for path in root.rglob("*"):
-            if path.is_file() and (expression == "*" or path.suffix == ".loca"):
-                rel = path.relative_to(root).as_posix()
-                entries.append(ArchiveEntry(rel, path.stat().st_size, 0))
-        return entries
+        with zipfile.ZipFile(package) as archive:
+            return [ArchiveEntry(info.filename, info.file_size, info.CRC) for info in archive.infolist()
+                    if expression == "*" or info.filename.endswith(".loca")]
 
     def extract_single_file(self, package: Path, packaged_path: str, destination: Path) -> None:
-        source = Path(str(package) + ".contents").joinpath(*packaged_path.replace("\\", "/").split("/"))
-        if not source.is_file():
-            raise FileNotFoundError(source)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, destination)
+        with zipfile.ZipFile(package) as archive:
+            destination.write_bytes(archive.read(packaged_path.replace("\\", "/")))
 
     def extract_package(self, package: Path, destination: Path) -> None:
-        source = self.package_source or Path(str(package) + ".contents")
-        shutil.copytree(source, destination, dirs_exist_ok=True)
+        with zipfile.ZipFile(package) as archive:
+            archive.extractall(destination)
 
     def create_package(self, source_dir: Path, destination: Path) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(b"PAK")
-        contents = Path(str(destination) + ".contents")
-        shutil.copytree(source_dir, contents, dirs_exist_ok=True)
+        with zipfile.ZipFile(destination, "w") as archive:
+            for path in sorted(source_dir.rglob("*")):
+                if path.is_file():
+                    archive.write(path, path.relative_to(source_dir).as_posix())
 
     def convert_loca(self, source: Path, destination: Path) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -94,6 +88,7 @@ class RebuildV1Tests(unittest.TestCase):
         loca_in_package.parent.mkdir(parents=True)
         loca_in_package.write_text(target_xml.read_text(encoding="utf-8"), encoding="utf-8")
         (package_contents / "metadata.txt").write_text("preserve me", encoding="utf-8")
+        FakeRebuildBackend().create_package(package_contents, target_pak)
 
         extract_manifest = {
             "schemaVersion": "1.0",
@@ -179,7 +174,8 @@ class RebuildV1Tests(unittest.TestCase):
             self.assertEqual(manifest["containerAction"], "repack")
             pak = output / "artifacts" / "ChineseTraditional.pak"
             self.assertTrue(pak.is_file())
-            repacked_contents = Path(str(pak) + ".contents")
+            repacked_contents = root / "verify-repacked"
+            FakeRebuildBackend().extract_package(pak, repacked_contents)
             self.assertEqual((repacked_contents / "metadata.txt").read_text(encoding="utf-8"), "preserve me")
             loca = repacked_contents / "Localization" / "ChineseTraditional" / "chinesetraditional.loca"
             artifact_loca = output / "artifacts" / "ChineseTraditional.loca"

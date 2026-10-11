@@ -14,6 +14,7 @@ from openpyxl.styles import Font
 from bg3loc.io import read_json, write_json
 from bg3loc.protected_syntax import extract_protected_tokens
 from bg3loc.schema import SchemaStore
+from bg3loc.extractor import ExtractFailure, validate_material_locales, validate_material_projection
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +74,10 @@ def run_build(request: BuildRequest) -> dict[str, Any]:
         raise BuildFailure(22, "CONTEXT_REQUIRED_BUT_MISSING", "context mode requires --context")
 
     _validate_unique_content_uids(aligned_rows)
+    try:
+        validate_material_locales(extract, aligned_rows, request.extract_manifest.parent)
+    except (ExtractFailure, OSError, ValueError) as exc:
+        raise BuildFailure(20, "EXTRACT_MANIFEST_INVALID", str(exc)) from exc
     visible_fields, editable_fields = field_contract(request.mode, references)
 
     material_rows: list[dict[str, Any]] = []
@@ -89,6 +94,11 @@ def run_build(request: BuildRequest) -> dict[str, Any]:
         material_rows.append(material)
         immutable_rows.append(immutable)
 
+    try:
+        validate_material_projection(extract, aligned_rows, material_rows)
+        validate_material_projection(extract, aligned_rows, immutable_rows)
+    except ValueError as exc:
+        raise BuildFailure(26, "PROTECTED_FIELD_CONTRACT_FAILED", str(exc)) from exc
     request.output.mkdir(parents=True, exist_ok=True)
     support: dict[str, str] = {}
     if request.context is not None:

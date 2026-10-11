@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -117,8 +118,8 @@ class ExtractV1Tests(unittest.TestCase):
     def test_extract_normalizes_and_full_outer_aligns(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            packages = root / "packages"
-            packages.mkdir()
+            packages = root / "game" / "Data" / "Localization"
+            packages.mkdir(parents=True)
             english_pak = packages / "English.pak"
             target_pak = packages / "ChineseTraditional.pak"
             english_pak.write_bytes(b"english")
@@ -140,7 +141,7 @@ class ExtractV1Tests(unittest.TestCase):
                     {
                         "localeId": "English",
                         "packageFile": str(english_pak),
-                        "packageSha256": "0" * 64,
+                        "packageSha256": hashlib.sha256(english_pak.read_bytes()).hexdigest(),
                         "locaEntries": [
                             {"path": "Localization/English/english_gender.loca"},
                             {"path": "Localization/English/english.loca"},
@@ -151,7 +152,7 @@ class ExtractV1Tests(unittest.TestCase):
                     {
                         "localeId": "ChineseTraditional",
                         "packageFile": str(target_pak),
-                        "packageSha256": "1" * 64,
+                        "packageSha256": hashlib.sha256(target_pak.read_bytes()).hexdigest(),
                         "locaEntries": [
                             {"path": "Localization/ChineseTraditional/chinesetraditional_to_f.loca"},
                             {"path": "Localization/ChineseTraditional/chinesetraditional.loca"},

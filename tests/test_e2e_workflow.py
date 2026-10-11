@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import patch
 
@@ -11,6 +12,12 @@ from bg3loc.e2e.prepare import WorkflowPrepareError, run_prepare
 
 
 class E2EWorkflowPrepareTests(unittest.TestCase):
+    def setUp(self):
+        # Orchestration mocks omit the archive universe. Real integrity is
+        # exercised without these mocks in test_basic_baseline_integrity.
+        self.enterContext(patch('bg3loc.e2e.baseline.prepare_baseline', side_effect=lambda state: nullcontext(None)))
+        self.enterContext(patch('bg3loc.e2e.baseline.validated_baseline', side_effect=lambda *args: nullcontext(None)))
+
     def make_project(self, root: Path, profile: str = "basic", strategy: str = "standard") -> Path:
         path = root / "bg3loc-project.json"
         path.write_text(json.dumps({
@@ -29,7 +36,12 @@ class E2EWorkflowPrepareTests(unittest.TestCase):
 
     def fake_extract(self, request):
         request.output.mkdir(parents=True, exist_ok=True)
-        (request.output / "extract-manifest.json").write_text("{}", encoding="utf-8")
+        roles = [request.source, request.target, *request.references]
+        (request.output / "extract-manifest.json").write_text(json.dumps({
+            "sourceLocale": request.source, "targetLocale": request.target,
+            "referenceLocales": list(request.references),
+            "locales": [{"localeId": role} for role in roles],
+        }), encoding="utf-8")
         return {}
 
     def fake_package(self, **kwargs):

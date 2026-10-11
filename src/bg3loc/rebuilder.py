@@ -3,9 +3,11 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import stat
 import tempfile
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
+from itertools import chain
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
@@ -350,45 +352,126 @@ def repack_target_package(
 ) -> None:
     if not target_package.is_file():
         raise FileNotFoundError(target_package)
-    expected_entries = {normalize_archive_path(entry.path).casefold() for entry in backend.list_archive(target_package, "*")}
-    if not expected_entries:
-        raise ValueError(f"Baseline PAK contains no listable entries: {target_package}")
-    expected_loca = normalize_archive_path(loca_entry).casefold()
-    if expected_loca not in expected_entries:
-        raise ValueError(f"Baseline PAK does not contain expected LOCA entry: {loca_entry}")
-
+    if destination.exists() and destination.samefile(target_package):
+        raise ValueError("Repack destination must not overwrite the source PAK")
+    source_hash = sha256_file(target_package)
+    replacement_hash = sha256_file(rebuilt_loca)
     staging_root.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="repack-", dir=staging_root) as temp:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="repack-", dir=staging_root) as temp, \
+            tempfile.TemporaryDirectory(prefix=".bg3loc-repack-", dir=destination.parent) as pending:
         temp_root = Path(temp)
+        # Bind every backend read to a private, hash-checked source snapshot.
+        source = temp_root / "source" / target_package.name
+        source.parent.mkdir()
+        shutil.copy2(target_package, source)
+        if sha256_file(source) != source_hash:
+            raise ValueError("Source PAK changed during repack snapshot capture")
+        expected_entries = _archive_inventory(backend, source)
+        expected_loca = normalize_archive_path(loca_entry).casefold()
+        if expected_loca not in expected_entries:
+            raise ValueError(f"Baseline PAK does not contain expected LOCA entry: {loca_entry}")
+        replacement_source = temp_root / "replacement" / rebuilt_loca.name
+        replacement_source.parent.mkdir()
+        shutil.copy2(rebuilt_loca, replacement_source)
+        if sha256_file(replacement_source) != replacement_hash:
+            raise ValueError("Rebuilt LOCA changed during repack snapshot capture")
+        expected_xml = temp_root / "expected.xml"
+        backend.convert_loca(replacement_source, expected_xml)
+        try:
+            expected_records = parse_loca_xml(expected_xml)
+        except ET.ParseError as exc:
+            raise ValueError("Rebuilt LOCA semantic read failed") from exc
+
         extracted = temp_root / "package"
-        backend.extract_package(target_package, extracted)
-        relative = safe_archive_relative_path(loca_entry)
-        replacement = extracted.joinpath(*relative.parts)
-        if not replacement.is_file():
-            raise ValueError(f"Extracted baseline package does not contain expected LOCA entry: {loca_entry}")
-        shutil.copy2(rebuilt_loca, replacement)
-        backend.create_package(extracted, destination)
-
-        actual_entries = {normalize_archive_path(entry.path).casefold() for entry in backend.list_archive(destination, "*")}
+        backend.extract_package(source, extracted)
+        original_hashes = _extracted_entry_hashes(extracted, expected_entries)
+        # A complete extraction must agree with individual reads of the sealed
+        # original archive, rather than certifying its own damaged staging tree.
+        for index, (key, name) in enumerate(sorted(expected_entries.items())):
+            original_entry = temp_root / "original-entries" / str(index)
+            backend.extract_single_file(source, name, original_entry)
+            if sha256_file(original_entry) != original_hashes[key]:
+                raise ValueError(f"Original PAK extraction SHA256 mismatch: {name}")
+        replacement = extracted.joinpath(*PurePosixPath(expected_entries[expected_loca]).parts)
+        shutil.copy2(replacement_source, replacement)
+        expected_hashes = {**original_hashes, expected_loca: replacement_hash}
+        candidate = Path(pending) / destination.name
+        backend.create_package(extracted, candidate)
+        candidate_hash = sha256_file(candidate)
+        actual_entries = _archive_inventory(backend, candidate)
         if actual_entries != expected_entries:
-            missing = sorted(expected_entries - actual_entries)[:10]
-            added = sorted(actual_entries - expected_entries)[:10]
-            raise ValueError(f"Repacked PAK entry set changed; missing={missing}, added={added}")
+            raise ValueError("Repacked PAK entry set or entry names changed")
+        verified = temp_root / "verify"
+        backend.extract_package(candidate, verified)
+        actual_hashes = _extracted_entry_hashes(verified, actual_entries)
+        if actual_hashes != expected_hashes:
+            changed = sorted(k for k in expected_hashes if actual_hashes[k] != expected_hashes[k])[:10]
+            raise ValueError(f"Repacked PAK entry SHA256 mismatch: {changed}")
+        verified_loca = verified.joinpath(*PurePosixPath(actual_entries[expected_loca]).parts)
+        actual_xml = temp_root / "actual.xml"
+        backend.convert_loca(verified_loca, actual_xml)
+        try:
+            validate_rebuilt_records([], expected_records, parse_loca_xml(actual_xml), {}, set())
+        except (RebuildFailure, ET.ParseError) as exc:
+            raise ValueError("Repacked PAK LOCA semantic mismatch") from exc
+        # Recheck after conversion, including converter writes and live input changes.
+        if (_extracted_entry_hashes(verified, actual_entries) != expected_hashes
+                or sha256_file(source) != source_hash
+                or sha256_file(candidate) != candidate_hash
+                or sha256_file(target_package) != source_hash
+                or sha256_file(rebuilt_loca) != replacement_hash):
+            raise ValueError("Repack inputs or verified payloads changed before publication")
+        candidate.replace(destination)  # Same filesystem; old artifact survives every prior failure.
 
-        verify_loca = temp_root / "verify" / rebuilt_loca.name
-        backend.extract_single_file(destination, loca_entry, verify_loca)
-        if sha256_file(verify_loca) != sha256_file(rebuilt_loca):
-            raise ValueError(f"Repacked PAK LOCA payload does not match rebuilt artifact: {loca_entry}")
+
+def _archive_inventory(backend: ArchiveBackend, package: Path) -> dict[str, str]:
+    return _unique_entry_paths(entry.path for entry in backend.list_archive(package, "*"))
+
+
+def _unique_entry_paths(paths: Iterable[str]) -> dict[str, str]:
+    entries: dict[str, str] = {}
+    for raw in paths:
+        name = normalize_archive_path(raw)
+        key = name.casefold()
+        if key in entries:
+            raise ValueError(f"Duplicate or conflicting PAK entry name: {name}")
+        entries[key] = name
+    if not entries:
+        raise ValueError("PAK contains no listable entries")
+    for key in entries:
+        parts = key.split("/")
+        if any("/".join(parts[:index]) in entries for index in range(1, len(parts))):
+            raise ValueError(f"PAK file/directory entry collision: {entries[key]}")
+    return entries
+
+
+def _extracted_entry_hashes(root: Path, inventory: dict[str, str]) -> dict[str, str]:
+    paths = []
+    for path in chain((root,), root.rglob("*")):
+        info = path.lstat()
+        if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
+            raise ValueError("Linked or reparse entry in extracted PAK")
+        if stat.S_ISREG(info.st_mode):
+            paths.append(path.relative_to(root).as_posix())
+        elif not stat.S_ISDIR(info.st_mode):
+            raise ValueError("Non-regular entry in extracted PAK")
+    if _unique_entry_paths(paths) != inventory:
+        raise ValueError("Extracted PAK entry inventory differs from archive listing")
+    return {key: sha256_file(root.joinpath(*PurePosixPath(name).parts)) for key, name in inventory.items()}
 
 
 def safe_archive_relative_path(raw: str) -> PurePosixPath:
     normalized = raw.replace("\\", "/")
     if not normalized or normalized.startswith("/"):
         raise ValueError(f"Unsafe archive entry path: {raw}")
+    parts = normalized.split("/")
     path = PurePosixPath(normalized)
-    if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
+    if path.is_absolute() or any(part in {"", ".", ".."} for part in parts):
         raise ValueError(f"Unsafe archive entry path: {raw}")
-    if path.parts and ":" in path.parts[0]:
+    reserved = {"CON", "PRN", "AUX", "NUL", *[f"COM{i}" for i in range(1, 10)], *[f"LPT{i}" for i in range(1, 10)]}
+    if any(any(ord(ch) < 32 or ch in '<>:"|?*' for ch in part)
+           or part.endswith((".", " ")) or part.split(".")[0].upper() in reserved for part in parts):
         raise ValueError(f"Unsafe archive entry path: {raw}")
     return path
 

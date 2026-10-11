@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +28,7 @@ from bg3loc.e2e.state import (
     state_path,
     write_state,
 )
-from bg3loc.extractor import ExtractFailure, ExtractRequest, run_extract
+from bg3loc.extractor import ExtractFailure, ExtractRequest, run_extract, material_locale_roles
 from bg3loc.io import read_json, write_json
 from bg3loc.scanner import ScanFailure, ScanRequest, build_manifest
 from bg3loc.schema import SchemaStore
@@ -129,6 +130,11 @@ def run_prepare(config: ResolvedProjectConfig) -> dict[str, Any]:
             _stage_completed(state, "extract", extract_path, fingerprint=extract_fingerprint)
         state["bindings"]["extractManifestSha256"] = sha256_file(extract_path)
         state["artifacts"]["extractManifest"] = str(extract_path)
+        roles = material_locale_roles(read_json(extract_path))
+        requested_roles = [locales["source"], locales["target"], *locales.get("references", [])]
+        if [role.casefold() for role in roles] != [role.casefold() for role in requested_roles]:
+            raise ValueError("Extract locale roles do not match the project")
+        locales = {"source": roles[0], "target": roles[1], "references": roles[2:]}
         state["stages"]["evidence"]["status"] = (
             state["stages"]["evidence"]["status"]
             if state["stages"]["evidence"]["status"] == "completed"
@@ -295,10 +301,17 @@ def run_prepare(config: ResolvedProjectConfig) -> dict[str, Any]:
     })
     if stage_reusable(state, "package", package_fingerprint):
         package_manifest = Path(str(state["stages"]["package"]["artifact"]))
+        from bg3loc.e2e.baseline import validated_baseline
+        try:
+            with validated_baseline(config, state):
+                pass
+        except ValueError as exc:
+            raise WorkflowPrepareError('package', str(exc)) from exc
         returns_dir = workspace / "returns"
         _initialize_returns(package_manifest, package_manifest.parent, returns_dir)
         state["artifacts"]["translationReturns"] = str(returns_dir)
-        state["stages"]["translate"]["artifact"] = str(returns_dir)
+        if state['stages']['translate']['status'] != 'completed':
+            state["stages"]["translate"]["artifact"] = str(returns_dir)
         state["stages"]["translate"]["status"] = (
             state["stages"]["translate"]["status"]
             if state["stages"]["translate"]["status"] != "invalidated"
@@ -315,20 +328,23 @@ def run_prepare(config: ResolvedProjectConfig) -> dict[str, Any]:
     try:
         _stage_running(state, "package")
         write_state(state_file, state)
-        prepare_translation_package(
-            extract_manifest=extract_path,
-            project_config_sha256=config.sha256,
-            evidence_profile=profile,
-            translation_strategy=strategy,
-            material_format=str(material["format"]),
-            max_rows=int(material["maxRowsPerFile"]),
-            output_dir=package_dir,
-            evidence_files=evidence_files,
-            glossary=glossary,
-            research_summary=research_summary,
-            research_mappings=research_mappings,
-            scope_content_uids=scope_content_uids,
-        )
+        from bg3loc.e2e.baseline import prepare_baseline
+        with prepare_baseline(state) if profile == 'basic' else nullcontext(None) as baseline:
+            prepare_translation_package(
+                extract_manifest=extract_path,
+                project_config_sha256=config.sha256,
+                evidence_profile=profile,
+                translation_strategy=strategy,
+                material_format=str(material["format"]),
+                max_rows=int(material["maxRowsPerFile"]),
+                output_dir=package_dir,
+                evidence_files=evidence_files,
+                glossary=glossary,
+                research_summary=research_summary,
+                research_mappings=research_mappings,
+                scope_content_uids=scope_content_uids,
+                baseline_binding=None if baseline is None else baseline.receipt,
+            )
         package_manifest = package_dir / "translation-package-manifest.json"
         package_sha = sha256_file(package_manifest)
         returns_dir = workspace / "returns"

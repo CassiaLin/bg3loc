@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import shutil
+import tempfile
+import warnings
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -10,6 +14,7 @@ from typing import Any, Iterable
 from bg3loc.backends import ArchiveBackend, ArchiveBackendError, backend_from_manifest
 from bg3loc.io import read_json, write_json
 from bg3loc.schema import SchemaStore
+from bg3loc.source_packages import ScanPackageSnapshot, SourcePackageError, no_link
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,9 +41,7 @@ def run_extract(request: ExtractRequest, backend: ArchiveBackend | None = None) 
     except Exception as exc:
         raise ExtractFailure(10, "SCAN_MANIFEST_INVALID", str(exc)) from exc
 
-    selected_ids = [request.source, request.target, *request.references]
-    _ensure_distinct_roles(selected_ids)
-
+    selected_ids = resolve_locale_roles(scan, [request.source, request.target, *request.references])
     locale_map = _index_locales(scan)
     selected: list[tuple[str, dict[str, Any]]] = []
     for index, locale_id in enumerate(selected_ids):
@@ -53,7 +56,74 @@ def run_extract(request: ExtractRequest, backend: ArchiveBackend | None = None) 
     if active_backend is None:
         raise ExtractFailure(14, "EFFECTIVE_PROVIDER_UNRESOLVED", "No usable archive backend recorded in scan manifest.")
 
-    request.output.mkdir(parents=True, exist_ok=True)
+    output = request.output.expanduser().absolute()
+    if output.is_symlink() or (output.exists() and getattr(output.lstat(), "st_file_attributes", 0) & 0x400):
+        raise ExtractFailure(15, "ARCHIVE_EXTRACTION_FAILED", "Linked extract output is unsupported")
+    output = output.resolve()
+    input_paths = [request.scan_manifest.resolve(), *[Path(locale["packageFile"]).resolve() for _, locale in selected]]
+    if any(path.is_relative_to(output) for path in input_paths):
+        raise ExtractFailure(15, "ARCHIVE_EXTRACTION_FAILED", "Extract output must not contain scan or source packages")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with tempfile.TemporaryDirectory(prefix="extract-stage-", dir=output.parent) as temporary:
+            temporary = Path(temporary)
+            with ScanPackageSnapshot(scan, selected, temporary / "packages") as packages:
+                work = temporary / "output"
+                if output.exists():
+                    if not output.is_dir():
+                        raise ValueError("Extract output is not a directory")
+                    # Preserve unrelated files and unselected locale artifacts, as v1 did.
+                    for path in (output, *output.rglob("*")):
+                        no_link(path)
+                    shutil.copytree(output, work)
+                else:
+                    work.mkdir()
+                manifest = _extract_verified(request, scan, selected, active_backend, work, packages)
+                _publish_extract(work, output, packages.verify)
+        return manifest
+    except (SourcePackageError, OSError, ValueError) as exc:
+        raise ExtractFailure(15, "ARCHIVE_EXTRACTION_FAILED", str(exc)) from exc
+
+
+def _publish_extract(work: Path, output: Path, verify) -> None:
+    previous = False
+    published = False
+    recovery = None
+    try:
+        verify()
+        if output.exists():
+            # Outside the staging directory: failed rollback must never be
+            # erased by automatic staging cleanup.
+            recovery = Path(tempfile.mkdtemp(prefix="extract-previous-", dir=output.parent))
+            backup = recovery / "output"
+            os.replace(output, backup)
+            previous = True
+        verify()
+        os.replace(work, output)
+        published = True
+        verify()
+    except BaseException:
+        try:
+            if published:
+                os.replace(output, work)
+            if previous:
+                os.replace(backup, output)
+        except OSError as exc:
+            raise OSError(f"Extract publication rollback failed; recovery preserved at {recovery}") from exc
+        raise
+    finally:
+        if recovery is not None and not (recovery / "output").exists():
+            recovery.rmdir()
+    if recovery is not None:
+        if recovery.resolve().parent != output.parent.resolve() or recovery.is_symlink():
+            raise OSError("Unsafe extract recovery cleanup path")
+        try:
+            shutil.rmtree(recovery)
+        except OSError:
+            warnings.warn(f"Verified extract published; previous output retained at {recovery}", RuntimeWarning)
+
+
+def _extract_verified(request, scan, selected, active_backend, work, packages):
     normalized_by_locale: dict[str, list[dict[str, Any]]] = {}
     locale_outputs: list[dict[str, Any]] = []
     roundtrip_reports: list[dict[str, Any]] = []
@@ -62,14 +132,17 @@ def run_extract(request: ExtractRequest, backend: ArchiveBackend | None = None) 
         actual_id = str(locale.get("localeId", requested_id))
         package_path = Path(str(locale["packageFile"]))
         loca_entry = _resolve_primary_loca_entry(locale, actual_id)
-        locale_dir = request.output / "locales" / actual_id
+        locale_dir = work / "locales" / actual_id
+        logical_locale_dir = request.output / "locales" / actual_id
         source_loca = locale_dir / "source.loca"
         source_xml = locale_dir / "source.xml"
         roundtrip_loca = locale_dir / "roundtrip.loca"
         roundtrip_xml = locale_dir / "roundtrip.xml"
 
         try:
-            active_backend.extract_single_file(package_path, loca_entry, source_loca)
+            packages.verify()
+            active_backend.extract_single_file(packages.path(actual_id), loca_entry, source_loca)
+            packages.verify()
         except ArchiveBackendError as exc:
             raise ExtractFailure(15, "ARCHIVE_EXTRACTION_FAILED", f"{actual_id}: {exc}") from exc
 
@@ -88,7 +161,7 @@ def run_extract(request: ExtractRequest, backend: ArchiveBackend | None = None) 
         except Exception as exc:
             raise ExtractFailure(17, "NORMALIZATION_FAILED", f"{actual_id}: {exc}") from exc
 
-        normalized_path = request.output / "normalized" / f"{actual_id}.jsonl"
+        normalized_path = work / "normalized" / f"{actual_id}.jsonl"
         write_jsonl(normalized_path, records)
         normalized_by_locale[actual_id] = records
 
@@ -116,32 +189,32 @@ def run_extract(request: ExtractRequest, backend: ArchiveBackend | None = None) 
             "localeId": actual_id,
             "packageFile": str(package_path),
             "locaEntry": loca_entry,
-            "sourceLoca": str(source_loca),
-            "sourceXml": str(source_xml),
-            "normalized": str(normalized_path),
+            "sourceLoca": str(logical_locale_dir / "source.loca"),
+            "sourceXml": str(logical_locale_dir / "source.xml"),
+            "normalized": str(request.output / "normalized" / f"{actual_id}.jsonl"),
             "nodeCount": len(records),
         })
 
-    aligned_path = request.output / "aligned" / "source-target.jsonl"
+    aligned_path = work / "aligned" / "source-target.jsonl"
     aligned_rows = align_locales(normalized_by_locale)
     write_jsonl(aligned_path, aligned_rows)
 
-    validation_path = request.output / "validation" / "roundtrip.json"
+    validation_path = work / "validation" / "roundtrip.json"
     write_json(validation_path, {"schemaVersion": "1.0", "locales": roundtrip_reports})
 
     manifest = {
         "schemaVersion": "1.0",
         "scanManifest": str(request.scan_manifest),
-        "sourceLocale": request.source,
-        "targetLocale": request.target,
-        "referenceLocales": list(request.references),
+        "sourceLocale": selected[0][0],
+        "targetLocale": selected[1][0],
+        "referenceLocales": [locale_id for locale_id, _ in selected[2:]],
         "backend": scan.get("backend", {}),
         "locales": locale_outputs,
-        "aligned": str(aligned_path),
-        "roundtripValidation": str(validation_path),
+        "aligned": str(request.output / "aligned" / "source-target.jsonl"),
+        "roundtripValidation": str(request.output / "validation" / "roundtrip.json"),
     }
     SchemaStore().validate("extract-manifest.schema.json", manifest)
-    write_json(request.output / "extract-manifest.json", manifest)
+    write_json(work / "extract-manifest.json", manifest)
     return manifest
 
 
@@ -247,6 +320,125 @@ def _index_locales(scan: dict[str, Any]) -> dict[str, dict[str, Any]]:
             raise ExtractFailure(14, "EFFECTIVE_PROVIDER_UNRESOLVED", f"Multiple providers remain for locale: {locale_id}")
         result[key] = raw
     return result
+
+
+def resolve_locale_roles(inventory: dict[str, Any], locale_ids: list[str]) -> list[str]:
+    """Resolve input spellings through the existing scanner inventory, never aliases."""
+    _ensure_distinct_roles(locale_ids)
+    registry = _index_locales(inventory)
+    resolved = []
+    for index, requested in enumerate(locale_ids):
+        entry = registry.get(requested.casefold())
+        if entry is None:
+            role = "SOURCE" if index == 0 else "TARGET" if index == 1 else "REFERENCE"
+            raise ExtractFailure(11 + min(index, 2), f"{role}_LOCALE_NOT_FOUND",
+                                 f"Locale not found in inventory: {requested}")
+        if entry.get("status", "ready") != "ready":
+            raise ExtractFailure(14, "EFFECTIVE_PROVIDER_UNRESOLVED",
+                                 f"Locale provider is not ready: {requested}")
+        resolved.append(str(entry["localeId"]))
+    return resolved
+
+
+def material_locale_roles(extract: dict[str, Any]) -> list[str]:
+    roles = [str(extract["sourceLocale"]), str(extract["targetLocale"]),
+             *[str(value) for value in extract.get("referenceLocales", [])]]
+    if resolve_locale_roles(extract, roles) != roles:
+        raise ValueError("Extract locale roles are not canonical; re-extract from the scan inventory")
+    return roles
+
+
+def validate_material_locales(extract: dict[str, Any], aligned: list[dict[str, Any]],
+                             manifest_dir: Path, *, scoped: bool = False) -> None:
+    """Bind canonical roles and source/target projections before material publication.
+
+    Legacy aligned-only consumers may lack normalized sidecars; inventory counts
+    still bind full alignment. Available normalized sidecars must agree exactly.
+    An explicit UID subset compares only its selected projection, not full counts.
+    """
+    roles = material_locale_roles(extract)
+    registry = _index_locales(extract)
+    projections: dict[str, dict[str, tuple[Any, Any]]] = {role: {} for role in roles}
+    seen = set()
+    for row in aligned:
+        uid = row.get("contentUid")
+        if not isinstance(uid, str) or not uid or uid in seen:
+            raise ValueError("Invalid or duplicate aligned ContentUid in locale material")
+        seen.add(uid)
+        locales = row.get("locales")
+        if not isinstance(locales, dict):
+            raise ValueError("Invalid aligned locale map")
+        for key in locales:
+            if not isinstance(key, str):
+                raise ValueError("Invalid aligned locale key")
+            entry = registry.get(key.casefold())
+            if entry is not None and key != entry["localeId"]:
+                raise ValueError("Aligned locale keys are not canonical")
+        for role in roles:
+            cell = locales.get(role)
+            if cell is None:
+                continue
+            if not isinstance(cell, dict) or not isinstance(cell.get("text"), str):
+                raise ValueError("Invalid aligned locale text")
+            projections[role][uid] = (cell["text"], cell.get("version"))
+    for role in roles:
+        entry = registry[role.casefold()]
+        projection = projections[role]
+        if not scoped and len(projection) != entry["nodeCount"]:
+            raise ValueError(f"Aligned locale record count mismatch: {role}")
+        raw = Path(str(entry["normalized"])).expanduser()
+        candidates = [raw] if raw.is_absolute() else [raw, manifest_dir / raw]
+        path = next((candidate for candidate in candidates if candidate.is_file()), None)
+        if path is None:
+            continue  # Existing v1 aligned-only material contract remains supported.
+        normalized = {}
+        with path.open("r", encoding="utf-8-sig") as stream:
+            for line in stream:
+                if not line.strip():
+                    continue
+                record = json.loads(line)
+                if not isinstance(record, dict) or not isinstance(record.get("contentUid"), str):
+                    raise ValueError("Invalid normalized locale record")
+                uid = record["contentUid"]
+                if not uid or uid in normalized or not isinstance(record.get("text"), str):
+                    raise ValueError("Invalid or duplicate normalized locale text")
+                if record.get("localeId", role) != role:
+                    raise ValueError("Normalized locale identity mismatch")
+                normalized[uid] = (record["text"], record.get("version"))
+        if len(normalized) != entry["nodeCount"]:
+            raise ValueError(f"Normalized locale record count mismatch: {role}")
+        expected = {uid: value for uid, value in normalized.items() if not scoped or uid in seen}
+        if expected != projection:
+            raise ValueError(f"Aligned/normalized locale text or version mismatch: {role}")
+
+
+def validate_material_projection(extract: dict[str, Any], aligned: list[dict[str, Any]],
+                                 material: list[dict[str, Any]]) -> None:
+    """Check required count and exact immutable source/target projection, including blanks."""
+    by_uid = {row["contentUid"]: row for row in aligned}
+    seen = set()
+    source_role, target_role = extract["sourceLocale"], extract["targetLocale"]
+    for row in material:
+        uid = row.get("ContentUid")
+        if uid not in by_uid or uid in seen:
+            raise ValueError("Material locale identity or count mismatch")
+        seen.add(uid)
+        source = by_uid[uid]["locales"].get(source_role)
+        target = by_uid[uid]["locales"].get(target_role)
+        expected = {"SourceLocale": source_role, "TargetLocale": target_role,
+                    "SourceText": "" if source is None else source["text"],
+                    "TranslationRequired": source is not None}
+        if "SourceVersion" in row:
+            expected["SourceVersion"] = None if source is None else source.get("version")
+        if "ExistingTargetText" in row:
+            expected["ExistingTargetText"] = "" if target is None else target["text"]
+        if "TargetVersion" in row:
+            expected["TargetVersion"] = None if target is None else target.get("version")
+        if (any(row.get(key) != value for key, value in expected.items())
+                or type(row.get("TranslationRequired")) is not bool):
+            raise ValueError("Material locale source/target projection or required count mismatch")
+    if seen != set(by_uid):
+        raise ValueError("Material locale identity or count mismatch")
 
 
 def _resolve_primary_loca_entry(locale: dict[str, Any], locale_id: str) -> str:

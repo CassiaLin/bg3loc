@@ -21,10 +21,34 @@ def run_workflow_install(
     *,
     apply: bool,
 ) -> dict[str, Any]:
+    from bg3loc.e2e.baseline import validated_baseline
+    from bg3loc.e2e.eligibility import current_eligibility, revoke_downstream, is_basic
+    if not state_path(config).is_file():
+        raise WorkflowInstallError('Workflow state not found')
+    state = load_state(state_path(config))
+    try:
+        with validated_baseline(config, state) as baseline:
+            with current_eligibility(config, state, require_rebuild=True) as eligibility:
+                if apply and baseline is not None:
+                    with baseline.installation_guard():
+                        return _run_workflow_install(config, state, apply=apply, eligibility=eligibility)
+                return _run_workflow_install(config, state, apply=apply, eligibility=eligibility)
+    except ValueError as exc:
+        if is_basic(config):
+            state = load_state(state_path(config))
+            revoke_downstream(state, 'install-dry-run', 'Current install preflight failed')
+            stage = 'install' if apply else 'install-dry-run'
+            state['stages'][stage]['status'] = 'failed'
+            state['stages'][stage]['message'] = str(exc)
+            state['currentStage'] = stage
+            write_state(state_path(config), state)
+        raise WorkflowInstallError(str(exc)) from exc
+
+
+def _run_workflow_install(config, state, *, apply, eligibility=None) -> dict[str, Any]:
     state_file = state_path(config)
     if not state_file.is_file():
         raise WorkflowInstallError("Workflow state not found")
-    state = load_state(state_file)
     if state["projectConfigSha256"] != config.sha256:
         raise WorkflowInstallError("Workflow state project binding does not match current config")
     if state["stages"]["rebuild"]["status"] != "completed":
@@ -47,7 +71,7 @@ def run_workflow_install(
         "scanManifestSha256": state["bindings"].get("scanManifestSha256"),
     })
 
-    if not apply and stage_reusable(state, "install-dry-run", dry_run_fingerprint):
+    if eligibility is None and not apply and stage_reusable(state, "install-dry-run", dry_run_fingerprint):
         import json
         artifact = Path(str(state["stages"]["install-dry-run"]["artifact"]))
         return json.loads(artifact.read_text(encoding="utf-8-sig"))
@@ -72,6 +96,8 @@ def run_workflow_install(
             backup_dir=backups,
             dry_run=not apply,
         ))
+        if eligibility is not None:
+            eligibility.check()
     except InstallFailure as exc:
         state["stages"][stage]["status"] = "failed"
         state["stages"][stage]["message"] = f"[{exc.key}] {exc.message}"

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import patch
 
@@ -11,6 +12,13 @@ from bg3loc.e2e.package import read_jsonl
 
 
 class E2ECLIAcceptanceTests(unittest.TestCase):
+    def setUp(self):
+        # CLI dispatch uses explicitly mocked scan/extract/rebuild/install.
+        # Native and synthetic complete receipt workflows are tested separately.
+        self.enterContext(patch('bg3loc.e2e.baseline.prepare_baseline', side_effect=lambda state: nullcontext(None)))
+        self.enterContext(patch('bg3loc.e2e.baseline.validated_baseline', side_effect=lambda *args: nullcontext(None)))
+        self.enterContext(patch('bg3loc.e2e.eligibility.current_eligibility', side_effect=lambda *args, **kwargs: nullcontext(None)))
+
     UID = "h11111111g2222g3333g4444g555555555555"
 
     def _write_extract_fixture(self, request) -> None:

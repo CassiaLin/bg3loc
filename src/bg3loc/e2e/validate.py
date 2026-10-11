@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -29,10 +30,36 @@ def run_validate(
     *,
     review_gate: bool = True,
 ) -> dict[str, Any]:
+    from bg3loc.e2e.baseline import validated_baseline
+    if not state_path(config).is_file():
+        raise WorkflowValidateError('validate', 'Workflow state not found; run workflow prepare first')
+    state = load_state(state_path(config))
+    try:
+        with validated_baseline(config, state):
+            return _run_validate(config, input_spec, review_gate=review_gate, state=state)
+    except ValueError as exc:
+        _validation_failure(config, 'Validation failed; rerun workflow validate')
+        raise WorkflowValidateError('baseline', str(exc)) from exc
+    except BaseException:
+        _validation_failure(config, 'Validation failed or was interrupted')
+        raise
+
+
+def _validation_failure(config, message):
+    if config.effective['workflow']['evidenceProfile'] == 'basic':
+        from bg3loc.e2e.eligibility import revoke_downstream
+        state = load_state(state_path(config))
+        revoke_downstream(state, 'rebuild', message)
+        state['stages']['validate']['status'] = 'failed'
+        state['stages']['validate']['message'] = message
+        state['currentStage'] = 'validate'
+        write_state(state_path(config), state)
+
+
+def _run_validate(config, input_spec, *, review_gate, state) -> dict[str, Any]:
     state_file = state_path(config)
     if not state_file.is_file():
         raise WorkflowValidateError("validate", "Workflow state not found; run workflow prepare first")
-    state = load_state(state_file)
     if state["projectConfigSha256"] != config.sha256:
         raise WorkflowValidateError("config", "Workflow state project binding does not match current config")
 
@@ -133,6 +160,9 @@ def run_validate(
             state["stages"]["validate"]["status"] = "invalidated"
             state["stages"]["validate"]["message"] = "Accepted validation target changed"
         else:
+            if config.effective['workflow']['evidenceProfile'] == 'basic':
+                from bg3loc.e2e.eligibility import validation_binding
+                validation_binding(config, state)
             return {
                 "status": "pass",
                 "errorCount": int(manifest.get("summary", {}).get("errorCount", 0)),
@@ -140,6 +170,13 @@ def run_validate(
                 "validateManifest": str(manifest_path),
                 "reused": True,
             }
+
+    if config.effective['workflow']['evidenceProfile'] == 'basic':
+        from bg3loc.e2e.eligibility import revoke_downstream
+        revoke_downstream(state, 'rebuild', 'New validation is in progress')
+        state['stages']['validate']['status'] = 'running'
+        state['currentStage'] = 'validate'
+        write_state(state_file, state)
 
     rows: list[dict[str, Any]] = []
     for path in input_files:
@@ -242,6 +279,10 @@ def run_validate(
     error_count = sum(1 for item in findings if item["severity"] == "error")
     workspace = Path(config.resolved["workspace"]["root"]) / "e2e"
     validation_dir = workspace / "validation"
+    if config.effective['workflow']['evidenceProfile'] == 'basic' and review_gate:
+        # Completed snapshots remain immutable history; failures never overwrite
+        # the accepted bytes referenced by a prior successful rebuild.
+        validation_dir = validation_dir / 'snapshots' / uuid.uuid4().hex
     accepted_path = validation_dir / "accepted" / "normalized-target.jsonl"
     rejected_path = validation_dir / "rejected" / "rejected-rows.jsonl"
     findings_path = validation_dir / "reports" / "e2e-findings.json"
@@ -373,6 +414,9 @@ def run_validate(
     })
     state["stages"]["translate"]["status"] = "completed"
     state["stages"]["translate"]["fingerprint"] = translation_fingerprint
+    if config.effective['workflow']['evidenceProfile'] == 'basic':
+        selector = Path(input_spec) if input_spec else Path(config.resolved['workspace']['root']) / 'e2e/returns'
+        state['stages']['translate']['artifact'] = str(selector.expanduser().resolve())
 
     review_sha = state["bindings"].get("reviewIntegrationSha256")
     if structural:
@@ -617,6 +661,9 @@ def _update_blocked_state(
     stage: str,
     message: str,
 ) -> None:
+    if state.get('evidenceProfile') == 'basic':
+        from bg3loc.e2e.eligibility import revoke_downstream
+        revoke_downstream(state, 'rebuild', message)
     if stage in state["stages"]:
         state["stages"][stage]["status"] = "blocked"
         state["stages"][stage]["message"] = message

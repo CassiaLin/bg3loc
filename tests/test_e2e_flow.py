@@ -5,6 +5,7 @@ import hashlib
 import json
 import tempfile
 import unittest
+from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import patch
 
@@ -24,6 +25,12 @@ from bg3loc.e2e.validate import WorkflowValidateError, _validate_final_target, r
 
 
 class E2EFlowTests(unittest.TestCase):
+    def setUp(self):
+        # This suite tests row QA/reconciliation and state transitions using
+        # incomplete archive fixtures. The public receipt gate has its own
+        # complete, unmocked integration tests in test_basic_baseline_integrity.
+        self.enterContext(patch('bg3loc.e2e.baseline.validated_baseline', side_effect=lambda *args: nullcontext(None)))
+
     UID = "h11111111g2222g3333g4444g555555555555"
 
     def make_extract(self, root: Path, *, reference: bool = True) -> Path:
@@ -729,6 +736,9 @@ class E2EFlowTests(unittest.TestCase):
                 )
 
     def test_rebuild_and_install_require_stage_bindings_and_dry_run(self) -> None:
+        # A deliberately incomplete manifest/transport unit fixture. Real B2
+        # preflight and fresh destination checks use complete unmocked fixtures.
+        self.enterContext(patch('bg3loc.e2e.eligibility.current_eligibility', side_effect=lambda *args, **kwargs: nullcontext(None)))
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             project = self.make_project(root)
