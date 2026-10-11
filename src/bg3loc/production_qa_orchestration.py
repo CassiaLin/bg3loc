@@ -93,6 +93,39 @@ def _read_counts(binding: ProductionWorkspaceBinding) -> tuple[dict[str, int], d
                 else:
                     qa_counts[str(route)] = qa_counts.get(str(route), 0) + count
             qa_counts["not checked"] = total - persisted
+    # The legacy aggregate used declared hashes only. Use the same actual
+    # content/source evidence gate as cache and completion, once per report.
+    from bg3loc.legacy_qa_material import LegacyQaMaterial
+    from bg3loc.qa_state import input_binding_current
+    qa_counts = {key: 0 for key in qa_counts}
+    qa_counts['not checked'] = total
+    with closing(sqlite3.connect(uri, uri=True)) as conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute('BEGIN')
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE name='qa_results'").fetchone():
+            column = stored_input_binding_expression(conn, 'qa_results', 'q.')
+            rows = conn.execute(f'''SELECT c.*,q.route,q.qa_rule_set_version,q.qa_input_hash,
+                q.output_hash AS qa_output_hash,{column} AS qa_execution_input
+                FROM content_state c JOIN qa_results q USING(content_uid)''').fetchall()
+            qa_counts['not checked'] -= len(rows)
+            from contextlib import ExitStack
+            with ExitStack() as stack:
+                try:
+                    material = stack.enter_context(LegacyQaMaterial(binding.database, binding.batch_plan, connection=conn))
+                except (ValueError, OSError, KeyError):
+                    material = None
+                required = requires_input_binding(conn)
+                for row in rows:
+                    current = (material is not None and row['status']=='succeeded'
+                        and row['qa_rule_set_version']==QA_RULESET_VERSION
+                        and row['qa_output_hash']==row['output_hash']
+                        and input_binding_current(row['qa_execution_input'],row['input_hash'],required=required))
+                    try:
+                        current = current and material.current(row['content_uid'],row,row['qa_input_hash'])
+                    except (ValueError, KeyError):
+                        current = False
+                    key = row['route'] if current else 'stale'
+                    qa_counts[key] = qa_counts.get(key,0) + 1
     return execution_counts, qa_counts
 
 
@@ -177,6 +210,7 @@ def resolve_workspace_review(
             reviewer=reviewer,
             note=note,
             text=text,
+            batch_plan=str(binding.batch_plan),
         )
     )
 

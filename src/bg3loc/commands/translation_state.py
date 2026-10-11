@@ -20,6 +20,8 @@ from bg3loc.ruleset_io import load_ruleset
 from bg3loc.translation_request import BatchMaterialResolver
 from bg3loc.production_context import context_from_material, material_context_fingerprint
 from bg3loc.translation_identity import TranslationInputParameters, translation_input_hash, execution_context_contract
+from bg3loc.dialogue_context import dialogue_context_from_material
+from bg3loc.dialogue_execution_contract import guard_material_family, material_workspace_version, reject_dialogue_execution
 
 
 def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -158,7 +160,19 @@ def load_execution_items(
     ruleset_fingerprint: str = "",
     source_locale: str = "",
     target_locale: str = "",
+    stage2_validation_only: bool = False,
 ) -> tuple[str, list[ExecutionItem]]:
+    manifest_version = material_workspace_version(batch_plan_path)
+    if manifest_version == "1.3":
+        if not stage2_validation_only:
+            reject_dialogue_execution()
+        from bg3loc.dialogue_execution_contract import validate_stage2_workspace
+        binding = validate_stage2_workspace(batch_plan_path.parent.parent)
+        rules = load_ruleset(binding.ruleset)
+        if (binding.batch_plan.resolve() != batch_plan_path.resolve() or
+                TranslationInputParameters(prompt_version, ruleset_fingerprint, source_locale, target_locale) !=
+                TranslationInputParameters(rules.version, rules.fingerprint(), rules.source_locale, rules.target_locale)):
+            raise RuntimeError("CONTEXT_CONTRACT_MISMATCH")
     with batch_plan_path.open("r", encoding="utf-8") as f:
         plan = json.load(f)
     fingerprint = str(plan.get("batchPlanFingerprint", ""))
@@ -178,6 +192,7 @@ def load_execution_items(
             raise RuntimeError(f"batch material not found: {material}")
 
         for row in _read_jsonl(material):
+            guard_material_family(row, manifest_version)
             uid = str(row.get("ContentUid", row.get("contentUid", "")))
             if not uid:
                 raise RuntimeError(f"{material}: row missing ContentUid")
@@ -192,6 +207,7 @@ def load_execution_items(
                 content_uid=uid, source_text=source_text, category=category, protected_syntax=protected,
                 parameters=TranslationInputParameters(prompt_version, ruleset_fingerprint, source_locale, target_locale),
                 context=context_from_material(row),
+                dialogue_context=dialogue_context_from_material(row),
             )
             items.append(ExecutionItem(uid, batch_id, input_hash))
 
@@ -211,6 +227,8 @@ def run_init(args: argparse.Namespace) -> int:
     manifest_path = batch_plan.parent.parent / "production-manifest.json"
     if manifest_path.is_file():
         recorded = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+        if recorded.get("schemaVersion") == "1.3":
+            reject_dialogue_execution()
         if recorded.get("schemaVersion") == "1.2":
             raise RuntimeError("sealed context workspace cannot be reconciled in place; use fresh prepare")
 
@@ -464,6 +482,8 @@ def _validate_openai_run(
 
 
 def _sealed_execution_contract(batch_plan: Path, db: Path, ruleset) -> dict | None:
+    if db.is_file():
+        reject_dialogue_execution(TranslationExecutionStore(db).get_metadata())
     manifest_path = batch_plan.parent.parent / "production-manifest.json"
     if manifest_path.is_file():
         from bg3loc.production_workspace import verify_production_workspace
@@ -473,6 +493,8 @@ def _sealed_execution_contract(batch_plan: Path, db: Path, ruleset) -> dict | No
         if load_ruleset(binding.ruleset).fingerprint() != ruleset.fingerprint():
             raise RuntimeError("worker ruleset does not match sealed workspace")
         return binding.manifest["execution"].get("contextContract")
+    load_execution_items(batch_plan, prompt_version=ruleset.version, ruleset_fingerprint=ruleset.fingerprint(),
+                         source_locale=ruleset.source_locale, target_locale=ruleset.target_locale)
     _, present = material_context_fingerprint(batch_plan, enabled=True)
     if present or (db.is_file() and TranslationExecutionStore(db).get_metadata().get("executionContextContractFingerprint")):
         raise RuntimeError("context execution requires a sealed production workspace; use fresh prepare")

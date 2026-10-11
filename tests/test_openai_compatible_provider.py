@@ -309,7 +309,8 @@ class TestOpenAICompatibleProvider(unittest.TestCase):
         assert isinstance(result, TranslationFailure)
         self.assertTrue(result.retryable)
         self.assertEqual(result.error_code, "OUTPUT_VALIDATION_FAILED")
-        self.assertEqual(result.provider_request_id, "req-bad")
+        # Failure IDs are untrusted diagnostic text; successes keep their IDs.
+        self.assertIsNone(result.provider_request_id)
 
     def test_missing_category_rule_fails_before_transport(self):
         transport = FakeTransport(

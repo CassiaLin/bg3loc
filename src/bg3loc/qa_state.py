@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextlib import closing
+from contextlib import closing, ExitStack, nullcontext
 from dataclasses import dataclass
 import json
 from pathlib import Path
@@ -118,6 +118,9 @@ class TranslationQaStore:
             columns = {row["name"] for row in conn.execute("PRAGMA table_info(qa_results)")}
             if "execution_input_hash" not in columns:
                 conn.execute("ALTER TABLE qa_results ADD COLUMN execution_input_hash TEXT")
+            archive_columns = {row["name"] for row in conn.execute("PRAGMA table_info(qa_rejected_candidates)")}
+            if "execution_input_hash" not in archive_columns:
+                conn.execute("ALTER TABLE qa_rejected_candidates ADD COLUMN execution_input_hash TEXT")
 
     def record_result(
         self,
@@ -126,9 +129,17 @@ class TranslationQaStore:
         checked_at: str,
         expected_input_hash: str | None = None,
         expected_output_hash: str | None = None,
+        _connection: sqlite3.Connection | None = None,
     ) -> None:
-        with closing(self.connect()) as conn, conn:
-            conn.execute("BEGIN IMMEDIATE")
+        with ExitStack() as stack:
+            if _connection is None:
+                conn = stack.enter_context(closing(self.connect()))
+                stack.enter_context(conn)
+                conn.execute("BEGIN IMMEDIATE")
+            else:
+                conn = _connection
+                if not conn.in_transaction:
+                    raise ValueError("QA persistence requires an active transaction")
             state = conn.execute(
                 """
                 SELECT output_hash, translated_text, input_hash, status
@@ -214,15 +225,20 @@ class TranslationQaStore:
         *,
         max_attempts: int,
         rejected_at: str,
+        expected_input_hash: str | None = None,
+        expected_output_hash: str | None = None,
     ) -> str:
         """Archive a QA-rejected candidate, then reopen its ContentUid in 01C."""
         if result.route != QA_ROUTE_RETRY:
             raise ValueError("QA handoff requires a RETRY result")
+        if max_attempts <= 0:
+            raise ValueError("max_attempts must be positive")
 
         with closing(self.connect()) as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
             state = conn.execute(
                 """
-                SELECT status, translated_text, output_hash, input_hash
+                SELECT status, translated_text, output_hash, input_hash, attempt_count
                 FROM content_state
                 WHERE content_uid = ?
                 """,
@@ -230,6 +246,15 @@ class TranslationQaStore:
             ).fetchone()
             if state is None:
                 raise ValueError(f"unknown ContentUid: {result.content_uid}")
+            if state["status"] != "succeeded":
+                raise ValueError("retry candidate is no longer succeeded")
+            if expected_input_hash is not None and state["input_hash"] != expected_input_hash:
+                raise ValueError("retry candidate input changed")
+            if expected_output_hash is not None and state["output_hash"] != expected_output_hash:
+                raise ValueError("retry candidate output changed")
+            from bg3loc.dialogue_review import is_dialogue_workspace
+            if is_dialogue_workspace(self.path) and (expected_input_hash is None or expected_output_hash is None):
+                raise ValueError("1.3 retry handoff requires the evaluated input/output snapshot")
             translated_text = state["translated_text"]
             output_hash = str(state["output_hash"] or "")
             if translated_text is None or not output_hash:
@@ -239,7 +264,7 @@ class TranslationQaStore:
 
             stored = conn.execute(
                 """
-                SELECT qa_input_hash, output_hash, execution_input_hash
+                SELECT qa_input_hash, output_hash, execution_input_hash, route, qa_rule_set_version
                 FROM qa_results
                 WHERE content_uid = ?
                 """,
@@ -247,6 +272,8 @@ class TranslationQaStore:
             ).fetchone()
             if stored is None:
                 raise ValueError(f"QA result is not persisted: {result.content_uid}")
+            if stored["route"] != QA_ROUTE_RETRY or stored["qa_rule_set_version"] != result.qa_rule_set_version:
+                raise ValueError("retry QA route/ruleset changed")
             if str(stored["qa_input_hash"]) != result.qa_input_hash:
                 raise ValueError(f"QA result hash mismatch: {result.content_uid}")
             if str(stored["output_hash"]) != output_hash:
@@ -273,8 +300,8 @@ class TranslationQaStore:
                 INSERT INTO qa_rejected_candidates(
                     content_uid, translated_text, output_hash,
                     qa_rule_set_version, qa_input_hash,
-                    route, issues_json, rejected_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    route, issues_json, rejected_at, execution_input_hash
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     result.content_uid,
@@ -285,15 +312,14 @@ class TranslationQaStore:
                     result.route,
                     issues_json,
                     rejected_at,
+                    str(state["input_hash"]),
                 ),
             )
 
-        execution = TranslationExecutionStore(self.path)
-        return execution.reopen_after_qa_retry(
-            content_uid=result.content_uid,
-            max_attempts=max_attempts,
-            updated_at=rejected_at,
-        )
+            next_status = "failed-retryable" if int(state["attempt_count"]) < max_attempts else "failed-final"
+            conn.execute("UPDATE content_state SET status=?,translated_text=NULL,output_hash=NULL,lease_owner=NULL,lease_expires_at=NULL,updated_at=? WHERE content_uid=?",
+                         (next_status, rejected_at, result.content_uid))
+            return next_status
 
     def get_rejected_candidates(
         self,
@@ -316,8 +342,15 @@ class TranslationQaStore:
         content_uid: str,
         *,
         current_rule_set_version: str | None = None,
+        dialogue_context_required: bool = False,
+        _material_snapshot=None,
+        _connection=None,
     ) -> StoredQaResult | None:
-        with closing(self.connect()) as conn:
+        with closing(self.connect()) if _connection is None else nullcontext(_connection) as conn:
+            if _connection is None:
+                conn.execute('BEGIN')
+            elif not conn.in_transaction:
+                raise ValueError('QA read requires a current transaction')
             binding_column = stored_input_binding_expression(conn, "qa_results", "q.")
             row = conn.execute(
                 f"""
@@ -330,6 +363,7 @@ class TranslationQaStore:
                     q.checked_at,
                     c.output_hash AS current_output_hash,
                     c.input_hash AS current_input_hash, {binding_column} AS execution_input_hash
+                    , c.translated_text AS current_text, c.batch_id AS current_batch, c.status AS current_status
                 FROM qa_results AS q
                 JOIN content_state AS c USING(content_uid)
                 WHERE q.content_uid = ?
@@ -340,12 +374,29 @@ class TranslationQaStore:
                 return None
 
             stale = str(row["qa_output_hash"]) != str(row["current_output_hash"] or "")
-            stale |= not input_binding_current(row["execution_input_hash"], str(row["current_input_hash"]), required=requires_input_binding(conn))
+            stale |= not input_binding_current(row["execution_input_hash"], str(row["current_input_hash"]), required=requires_input_binding(conn) or dialogue_context_required)
             if (
                 current_rule_set_version is not None
                 and str(row["qa_rule_set_version"]) != current_rule_set_version
             ):
                 stale = True
+
+            from bg3loc.dialogue_review import is_dialogue_workspace
+            if not is_dialogue_workspace(self.path, _connection=conn):
+                from bg3loc.legacy_qa_material import LegacyQaMaterial
+                try:
+                    state = {'translated_text': row['current_text'], 'output_hash': row['current_output_hash'],
+                             'input_hash': row['current_input_hash'], 'batch_id': row['current_batch']}
+                    if _material_snapshot is not None:
+                        if _material_snapshot.database != self.path.resolve():
+                            raise ValueError('Foreign material snapshot')
+                        stale |= not _material_snapshot.current(content_uid, state, row['qa_input_hash'])
+                    else:
+                        with LegacyQaMaterial(self.path, connection=conn) as material:
+                            stale |= not material.current(content_uid, state, row['qa_input_hash'])
+                    stale |= row['current_status'] != 'succeeded'
+                except (ValueError, KeyError, OSError):
+                    stale = True
 
             issue_rows = conn.execute(
                 """
@@ -366,6 +417,10 @@ class TranslationQaStore:
                 }
                 for issue in issue_rows
             )
+            if dialogue_context_required:
+                from bg3loc.dialogue_review import semantic_gate_present
+                if row["route"] in {"PASS", "REVIEW"} and (row["route"] != "REVIEW" or not semantic_gate_present(issues)):
+                    stale = True
 
             return StoredQaResult(
                 content_uid=str(row["content_uid"]),
@@ -420,6 +475,21 @@ class TranslationQaStore:
             grouped.setdefault(str(row["content_uid"]), []).append(row)
 
         results: list[StoredQaResult] = []
+        from bg3loc.dialogue_review import is_dialogue_workspace
+        if not is_dialogue_workspace(self.path):
+            from bg3loc.legacy_qa_material import LegacyQaMaterial
+            try:
+                with closing(self.connect()) as read_conn:
+                    read_conn.execute('BEGIN')
+                    with LegacyQaMaterial(self.path, connection=read_conn) as material:
+                        uids = [r[0] for r in read_conn.execute('SELECT content_uid FROM qa_results WHERE route=? ORDER BY content_uid', (route,))]
+                        return [self.get_result(uid, current_rule_set_version=current_rule_set_version,
+                                                _material_snapshot=material, _connection=read_conn) for uid in uids]
+            except (ValueError, KeyError, OSError):
+                # Fall through to legacy metadata, but every row is stale.
+                invalid_material = True
+        else:
+            invalid_material = False
         for content_uid, group in grouped.items():
             first = group[0]
             stale = str(first["qa_output_hash"]) != str(
@@ -431,6 +501,7 @@ class TranslationQaStore:
                 and str(first["qa_rule_set_version"]) != current_rule_set_version
             ):
                 stale = True
+            stale |= invalid_material
             issues = tuple(
                 {
                     "issueCode": str(row["issue_code"]),

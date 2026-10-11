@@ -189,6 +189,13 @@ def finalize_production_workspace(
     *,
     rebuild_backend: ArchiveBackend | None = None,
 ) -> ProductionFinalizeResult:
+    manifest_path=request.workspace/"production-manifest.json"
+    if manifest_path.is_file():
+        from bg3loc.dialogue_context import strict_json_loads
+        if strict_json_loads(manifest_path.read_bytes()).get("schemaVersion")=="1.3":
+            from bg3loc.portable_finalize import finalize_portable_workspace
+            manifest=finalize_portable_workspace(request.workspace,request.output,backend=rebuild_backend,container=request.container)
+            return ProductionFinalizeResult(manifest,request.output/"finalize-manifest.json")
     binding = verify_production_workspace(request.workspace)
     completion = build_production_completion_view(binding.database, binding.batch_plan)
     _require_completion_ready(completion)

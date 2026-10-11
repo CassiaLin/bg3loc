@@ -1,0 +1,227 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "pathPolicyVersion",
+    "finalizePolicyVersion",
+    "sourceLocale",
+    "targetLocale",
+    "originExtractManifestSha256",
+    "sourceVersionIndex",
+    "targetVersionIndex",
+    "targetBaselineXml",
+    "targetBaselineLoca",
+    "targetPackage",
+    "assetFingerprint",
+    "versionIndexSchemaVersion",
+    "sourceUidCount",
+    "targetUidCount"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "production-finalize-assets/1"
+    },
+    "pathPolicyVersion": {
+      "const": "workspace-relative-path/1"
+    },
+    "finalizePolicyVersion": {
+      "const": "production-portable-finalize/1"
+    },
+    "sourceLocale": {
+      "const": "English"
+    },
+    "targetLocale": {
+      "type": "string",
+      "minLength": 1
+    },
+    "originExtractManifestSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sourceVersionIndex": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "size"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?!.*[:\\\\])(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*[\\x00-\\x1f]).+$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "targetVersionIndex": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "size"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?!.*[:\\\\])(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*[\\x00-\\x1f]).+$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "targetBaselineXml": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "size"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?!.*[:\\\\])(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*[\\x00-\\x1f]).+$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "targetBaselineLoca": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "size"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?!.*[:\\\\])(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*[\\x00-\\x1f]).+$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "targetPackage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "originalPackageName",
+        "locaEntry",
+        "entries"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "pak",
+            "loca"
+          ]
+        },
+        "originalPackageName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "locaEntry": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?!.*[:\\\\])(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*[\\x00-\\x1f]).+$"
+        },
+        "entries": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "entryPath",
+              "snapshot"
+            ],
+            "properties": {
+              "entryPath": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^(?!/)(?!.*[:\\\\])(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*[\\x00-\\x1f]).+$"
+              },
+              "snapshot": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "path",
+                  "sha256",
+                  "size"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^(?!/)(?!.*[:\\\\])(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*[\\x00-\\x1f]).+$"
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "size": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "assetFingerprint": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "versionIndexSchemaVersion": {
+      "const": "localization-version-index/1"
+    },
+    "sourceUidCount": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "targetUidCount": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Documentation-only portable finalize asset contract; not registered runtime schema",
+  "$comment": "All paths workspace-relative. Full logical archive entry closure, semantic LOCA/index equality, safe paths and hashes are required cross-field invariants."
+}

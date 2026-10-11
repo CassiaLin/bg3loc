@@ -11,6 +11,7 @@ from urllib import error, request
 
 from bg3loc.chat_prompt import render_chat_messages, chat_messages_fingerprint
 from bg3loc.prompt_provenance import PromptProvenance
+from bg3loc.translation_send import provenance_for_prepared_send
 from bg3loc import prompt_assembly
 from bg3loc.execution_runner import (
     ProviderTokenUsage,
@@ -21,6 +22,7 @@ from bg3loc.execution_runner import (
 from bg3loc.prompt_assembly import TranslationRuleSet, assemble_translation_prompt
 from bg3loc.protected_syntax import validate_protected_syntax
 from bg3loc.translation_request import TranslationRequest
+from bg3loc.provider_diagnostics import safe_error_message, transport_error_message
 
 
 class JsonHttpTransport(Protocol):
@@ -40,13 +42,34 @@ class JsonHttpTransport(Protocol):
 
 class UrllibJsonTransport:
     def post_json(
+        self, *, url: str, headers: dict[str, str], payload: dict[str, object],
+        timeout_seconds: float,
+    ) -> tuple[int, dict[str, object], Mapping[str, str]]:
+        try:
+            return self._post_json(url=url, headers=headers, payload=payload,
+                                   timeout_seconds=timeout_seconds)
+        except Exception as exc:
+            message = transport_error_message(exc)
+            # Do not expose urllib exception chains (URL, body or JSON doc).
+            if message == 'Provider transport timed out':
+                raise TimeoutError(message) from None
+            if message == 'Provider DNS resolution failed':
+                raise socket.gaierror(message) from None
+            if message == 'Provider connection failed':
+                raise ConnectionError(message) from None
+            safe = OSError(message)
+            if message == 'Provider transport failed (WinError 10013)':
+                safe.winerror = 10013
+            raise safe from None
+
+    def _post_json(
         self,
         *,
         url: str,
         headers: dict[str, str],
         payload: dict[str, object],
         timeout_seconds: float,
-    ) -> tuple[int, dict[str, object]]:
+    ) -> tuple[int, dict[str, object], Mapping[str, str]]:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         req = request.Request(url, data=body, headers=headers, method="POST")
         try:
@@ -55,17 +78,24 @@ class UrllibJsonTransport:
                 parsed = json.loads(raw)
                 if not isinstance(parsed, dict):
                     raise ValueError("provider response must be a JSON object")
-                return int(response.status), parsed, dict(response.headers.items())
+                return int(response.status), parsed, {}
         except error.HTTPError as exc:
-            raw = exc.read().decode("utf-8", errors="replace")
+            # Bounded parse for numeric usage only; body/IDs never escape.
+            raw = exc.read(65537)
             try:
-                parsed = json.loads(raw) if raw else {}
-            except json.JSONDecodeError:
-                parsed = {"error": raw}
+                parsed = json.loads(raw) if raw and len(raw) <= 65536 else {}
+            except (ValueError, UnicodeError):
+                parsed = {}
             if not isinstance(parsed, dict):
-                parsed = {"error": parsed}
-            response_headers = dict(exc.headers.items()) if exc.headers is not None else {}
-            return int(exc.code), parsed, response_headers
+                parsed = {}
+            usage = _provider_usage(parsed)
+            safe_body = {} if usage is None else {'usage': {
+                'prompt_tokens': usage.prompt_tokens, 'completion_tokens': usage.completion_tokens,
+                'total_tokens': usage.total_tokens}}
+            retry_after = exc.headers.get('Retry-After') if exc.headers is not None else None
+            response_headers = {} if retry_after is None else {'Retry-After': retry_after}
+            exc.close()
+            return int(exc.code), safe_body, response_headers
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +113,16 @@ def openai_compatible_execution_config_hash(
     ruleset: TranslationRuleSet,
     *, context_contract: dict | None = None,
 ) -> str:
+    if context_contract is not None and ("families" in context_contract or
+            str(context_contract.get("schemaVersion", "")).startswith("production-context-contract/")):
+        from bg3loc.dialogue_execution_contract import validate_context_contract_v2
+        from bg3loc.dialogue_context import fail
+        try:
+            families = context_contract["families"]
+            validate_context_contract_v2(context_contract, families["dialogue"]["dialogueContextMaterialFingerprint"],
+                None if families["sameEntity"] is None else families["sameEntity"]["sameEntityContextMaterialFingerprint"])
+        except (KeyError, TypeError):
+            fail("CONTEXT_CONTRACT_MISMATCH")
     payload = {
         "provider": "openai-compatible",
         "baseUrl": config.base_url.rstrip("/"),
@@ -123,6 +163,11 @@ class OpenAICompatibleChatProvider:
 
     def translate_with_provenance(self, translation_request: TranslationRequest,
                                   before_send: Callable[[PromptProvenance], None] | None) -> TranslationOutcome:
+        if translation_request.dialogue_context is not None:
+            # Provenance/review can be validated offline. Complete prepare,
+            # attestation, portable assets and activation are still mandatory.
+            return TranslationFailure(error_code="CONTEXT_CONTRACT_MISMATCH",
+                                      error_message="Dialogue production execution remains disabled pending full workspace and activation gates", retryable=False)
         if not self.config.base_url.strip():
             return TranslationFailure(
                 error_code="PROVIDER_CONFIG_INVALID",
@@ -142,7 +187,7 @@ class OpenAICompatibleChatProvider:
         except Exception as exc:
             return TranslationFailure(
                 error_code="PROMPT_ASSEMBLY_ERROR",
-                error_message=f"{type(exc).__name__}: {exc}",
+                error_message="Failure details suppressed",
                 retryable=False,
             )
 
@@ -169,14 +214,10 @@ class OpenAICompatibleChatProvider:
         # before network errors can occur; never store their source text here.
         if before_send is not None:
             try:
-                context = translation_request.same_entity_context
-                before_send(PromptProvenance(translation_request.input_hash,
-                    context.context_fingerprint if context is not None else None,
-                    assembled.effective_prompt_hash, chat_messages_fingerprint(messages),
-                    prompt_assembly.SAME_ENTITY_PROMPT_VERSION if context is not None else None))
+                before_send(provenance_for_prepared_send(translation_request, assembled, messages))
             except Exception as exc:
                 return TranslationFailure(error_code="PROMPT_PROVENANCE_ERROR",
-                    error_message=f"{type(exc).__name__}: {exc}", retryable=False)
+                    error_message="Failure details suppressed", retryable=False)
 
         try:
             transport_result = self.transport.post_json(
@@ -190,20 +231,27 @@ class OpenAICompatibleChatProvider:
                 response_headers: Mapping[str, str] = {}
             else:
                 status, response, response_headers = transport_result
+            if type(status) is not int or not 100 <= status <= 599:
+                raise ValueError("invalid transport status")
+            # A malformed HTTP body still has its original HTTP classification.
+            if not isinstance(response, dict):
+                response = {}
         except (error.URLError, TimeoutError, socket.timeout, ConnectionError, OSError) as exc:
             return TranslationFailure(
                 error_code="PROVIDER_TRANSPORT_ERROR",
-                error_message=f"{type(exc).__name__}: {exc}",
+                error_message=transport_error_message(exc),
                 retryable=True,
             )
         except Exception as exc:
             return TranslationFailure(
                 error_code="PROVIDER_TRANSPORT_ERROR",
-                error_message=f"{type(exc).__name__}: {exc}",
+                error_message=transport_error_message(exc),
                 retryable=True,
             )
 
-        request_id = str(response.get("id", "")) or None
+        request_id = response.get("id")
+        if type(request_id) is not str:
+            request_id = None
         usage = _provider_usage(response)
 
         if status == 429 or 500 <= status <= 599:
@@ -231,7 +279,7 @@ class OpenAICompatibleChatProvider:
         except ValueError as exc:
             return TranslationFailure(
                 error_code="PROVIDER_RESPONSE_INVALID",
-                error_message=str(exc),
+                error_message=safe_error_message("PROVIDER_RESPONSE_INVALID"),
                 retryable=True,
                 provider_request_id=request_id,
                 usage=usage,
@@ -251,13 +299,9 @@ class OpenAICompatibleChatProvider:
             text,
         )
         if issues:
-            detail = "; ".join(
-                f"{issue.kind}:{','.join(issue.details)}"
-                for issue in issues
-            )
             return TranslationFailure(
                 error_code="OUTPUT_VALIDATION_FAILED",
-                error_message=detail or "protected syntax validation failed",
+                error_message=safe_error_message("OUTPUT_VALIDATION_FAILED"),
                 retryable=True,
                 provider_request_id=request_id,
                 usage=usage,
@@ -287,14 +331,8 @@ def _extract_chat_content(payload: dict[str, object]) -> str:
 
 
 def _provider_error_message(payload: dict[str, object], status: int) -> str:
-    err = payload.get("error")
-    if isinstance(err, dict):
-        message = err.get("message")
-        if isinstance(message, str) and message:
-            return message
-    if isinstance(err, str) and err:
-        return err
-    return f"provider returned HTTP {status}"
+    # Ignore every body field, including unfamiliar provider-specific echoes.
+    return safe_error_message(f"HTTP_{status}")
 
 
 def _retry_after_seconds(

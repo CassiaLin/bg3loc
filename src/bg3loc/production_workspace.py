@@ -13,7 +13,7 @@ from bg3loc.production_context import verify_context_materialization
 from bg3loc.translation_identity import validate_execution_context_contract
 
 
-SUPPORTED_PRODUCTION_MANIFEST_SCHEMAS = frozenset({"1.0", "1.1", "1.2"})
+SUPPORTED_PRODUCTION_MANIFEST_SCHEMAS = frozenset({"1.0", "1.1", "1.2", "1.3"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,12 +77,13 @@ def batch_materials_fingerprint(batch_plan: Path) -> str:
     return digest.hexdigest()
 
 
-def execution_inventory_fingerprint(database: Path) -> str:
+def execution_inventory_fingerprint(database: Path, *, _connection=None) -> str:
     if not database.is_file():
         raise RuntimeError(f"execution database not found: {database}")
     uri = database.resolve().as_uri() + "?mode=ro"
     try:
-        with closing(sqlite3.connect(uri, uri=True)) as conn:
+        from contextlib import nullcontext
+        with closing(sqlite3.connect(uri, uri=True)) if _connection is None else nullcontext(_connection) as conn:
             rows = conn.execute(
                 """
                 SELECT content_uid, batch_id, input_hash
@@ -129,6 +130,11 @@ def verify_production_workspace(workspace: Path) -> ProductionWorkspaceBinding:
         raise RuntimeError(f"production manifest not found: {manifest_path}")
     manifest = _load_json(manifest_path)
     schema_version = str(manifest.get("schemaVersion", ""))
+    from bg3loc.dialogue_execution_contract import material_workspace_version, validate_manifest_1_3, reject_dialogue_execution
+    if schema_version == "1.3":
+        from bg3loc.dialogue_context import strict_json_loads
+        validate_manifest_1_3(strict_json_loads(manifest_path.read_bytes()))
+        reject_dialogue_execution()  # Recognition is not Stage 3 execution authorization.
     if schema_version not in SUPPORTED_PRODUCTION_MANIFEST_SCHEMAS:
         supported = ", ".join(sorted(SUPPORTED_PRODUCTION_MANIFEST_SCHEMAS))
         raise RuntimeError(
@@ -152,6 +158,16 @@ def verify_production_workspace(workspace: Path) -> ProductionWorkspaceBinding:
     batch_plan = _workspace_file(
         batching.get("batchPlan"), workspace=root, label="batch plan"
     )
+    material_workspace_version(batch_plan)
+    # Reject declared dialogue on ANY legacy row, even when a context field is
+    # null and even after namespace/manifest stripping.
+    from bg3loc.dialogue_execution_contract import guard_material_family
+    for batch in _load_json(batch_plan).get("batches", []):
+        material = batch_plan.parent / "materials" / f"{batch['batchId']}.jsonl"
+        if material.is_file():
+            for line in material.read_text(encoding="utf-8-sig").splitlines():
+                if line.strip():
+                    guard_material_family(json.loads(line), schema_version)
     database = _workspace_file(
         execution.get("database"), workspace=root, label="execution database"
     )
@@ -205,6 +221,7 @@ def verify_production_workspace(workspace: Path) -> ProductionWorkspaceBinding:
             str(key): str(value)
             for key, value in conn.execute("SELECT key, value FROM metadata")
         }
+    reject_dialogue_execution(metadata)
     if metadata.get("batchPlanFingerprint", "") != manifest_fingerprint:
         raise RuntimeError("execution database batch fingerprint does not match production manifest")
     if metadata.get("rulesetFingerprint", "") != actual_ruleset_fingerprint:
@@ -240,3 +257,16 @@ def verify_production_workspace(workspace: Path) -> ProductionWorkspaceBinding:
         database=database,
         ruleset=ruleset_path,
     )
+
+
+def verify_portable_workspace(workspace: Path, *, archive_backend=None) -> ProductionWorkspaceBinding:
+    """Complete technical 1.3 verification; never authorizes provider activation."""
+    root=workspace.resolve()
+    from bg3loc.dialogue_execution_contract import validate_stage2_workspace
+    from bg3loc.dialogue_context import strict_json_loads
+    from bg3loc.portable_assets import verify_finalize_assets
+    binding=validate_stage2_workspace(root)
+    manifest_path=root/"production-manifest.json"
+    manifest=strict_json_loads(manifest_path.read_bytes())
+    verify_finalize_assets(root,manifest["finalizeAssets"],backend=archive_backend)
+    return ProductionWorkspaceBinding(root,manifest_path,manifest,binding.batch_plan,binding.database,binding.ruleset)

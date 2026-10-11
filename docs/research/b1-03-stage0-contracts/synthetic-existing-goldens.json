@@ -1,0 +1,12 @@
+{
+  "H0": {
+    "inputHash": "c8813418c5c77f1fef21f70044cf846492efcf9d7a0722d9601a719dc692c0ba",
+    "effectivePromptHash": "1e3bc4f371833c4af0f6b9acaa8bec6e2339861ee4be5ac59ed17b42a0f755ad",
+    "messagesFingerprint": "947b5aeb0665f4e6aab8a567521ff9f1f0715d0c2a45a42d188fa2114e4ebd0a"
+  },
+  "HSE": {
+    "inputHash": "ecac61e8705b82aa4c25ab2d06df8f46cbbd56581f27b7ddf6f3c42ae5f757d6",
+    "effectivePromptHash": "71b4354ae590aaafb48346a0e6f50b579f5f3a17af9a0afe1f9de5e0a463bdd0",
+    "messagesFingerprint": "d57ec01aaa0b5321aaf46472752c1641fb11c174da899bb76c5d4e70566be9f8"
+  }
+}

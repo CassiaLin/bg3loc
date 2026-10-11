@@ -1,0 +1,315 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "policyVersion",
+    "orderingVersion",
+    "budgetContract",
+    "targetBinding",
+    "targetProof",
+    "possiblePredecessors",
+    "possibleSuccessors",
+    "sourceCodepoints",
+    "evidenceFingerprint",
+    "contextFingerprint"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "dialogue-context/1"
+    },
+    "policyVersion": {
+      "const": "b1-03-policy-a/1"
+    },
+    "orderingVersion": {
+      "const": "dialogue-node-uid-order/1"
+    },
+    "budgetContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "countingVersion",
+        "maxSourceCodepoints"
+      ],
+      "properties": {
+        "version": {
+          "const": "dialogue-budget/1"
+        },
+        "countingVersion": {
+          "const": "unicode-codepoints/1"
+        },
+        "maxSourceCodepoints": {
+          "const": 2000
+        }
+      }
+    },
+    "targetBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contentUid",
+        "category",
+        "sourceTextSha256"
+      ],
+      "properties": {
+        "contentUid": {
+          "type": "string",
+          "minLength": 1
+        },
+        "category": {
+          "const": "dialogue_general"
+        },
+        "sourceTextSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "targetProof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dialogueId",
+        "dialogueIdentityOrigin",
+        "nodeId",
+        "nodeIdentityOrigin",
+        "dialogueDefinitionFingerprint",
+        "nodeDefinitionFingerprint",
+        "sourceOccurrenceFingerprint"
+      ],
+      "properties": {
+        "dialogueId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "dialogueIdentityOrigin": {
+          "const": "native_UUID"
+        },
+        "nodeId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nodeIdentityOrigin": {
+          "const": "native_UUID"
+        },
+        "dialogueDefinitionFingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "nodeDefinitionFingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "sourceOccurrenceFingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "possiblePredecessors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "nodeId",
+          "nodeIdentityOrigin",
+          "nodeDefinitionFingerprint",
+          "nativeChildProof",
+          "sourceVariants"
+        ],
+        "properties": {
+          "nodeId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "nodeIdentityOrigin": {
+            "const": "native_UUID"
+          },
+          "nodeDefinitionFingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "nativeChildProof": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "edgeType",
+              "fromNodeId",
+              "toNodeId",
+              "edgeDefinitionFingerprint"
+            ],
+            "properties": {
+              "edgeType": {
+                "const": "child"
+              },
+              "fromNodeId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "toNodeId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "edgeDefinitionFingerprint": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          },
+          "sourceVariants": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "contentUid",
+                "sourceText",
+                "occurrenceFingerprints"
+              ],
+              "properties": {
+                "contentUid": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sourceText": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "occurrenceFingerprints": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "possibleSuccessors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "nodeId",
+          "nodeIdentityOrigin",
+          "nodeDefinitionFingerprint",
+          "nativeChildProof",
+          "sourceVariants"
+        ],
+        "properties": {
+          "nodeId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "nodeIdentityOrigin": {
+            "const": "native_UUID"
+          },
+          "nodeDefinitionFingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "nativeChildProof": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "edgeType",
+              "fromNodeId",
+              "toNodeId",
+              "edgeDefinitionFingerprint"
+            ],
+            "properties": {
+              "edgeType": {
+                "const": "child"
+              },
+              "fromNodeId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "toNodeId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "edgeDefinitionFingerprint": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          },
+          "sourceVariants": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "contentUid",
+                "sourceText",
+                "occurrenceFingerprints"
+              ],
+              "properties": {
+                "contentUid": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sourceText": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "occurrenceFingerprints": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "sourceCodepoints": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2000
+    },
+    "evidenceFingerprint": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "contextFingerprint": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "anyOf": [
+    {
+      "properties": {
+        "possiblePredecessors": {
+          "minItems": 1
+        }
+      }
+    },
+    {
+      "properties": {
+        "possibleSuccessors": {
+          "minItems": 1
+        }
+      }
+    }
+  ],
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Documentation-only DialogueContext v1 contract; not registered runtime schema",
+  "$comment": "Cross-field order, budgets, binding, proof/evidence/context hashes require semantic validation in the accompanying specification."
+}

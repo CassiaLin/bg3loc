@@ -122,6 +122,26 @@ class ResearchBatchRequest:
     max_records: tuple[str, ...] = ()
 
 
+def run_dialogue_stage_prepare(args: argparse.Namespace) -> int:
+    from bg3loc.dialogue_context import DialogueContextValidationError
+    from bg3loc.dialogue_stage_prepare import prepare_dialogue_stage
+
+    try:
+        summary = prepare_dialogue_stage(
+            evidence_dir=Path(args.evidence_dir), source_snapshot=Path(args.source_snapshot),
+            batch_plan=Path(args.batch_plan), output_dir=Path(args.output_dir),
+            enabled=args.enable_dialogue_context,
+        )
+    except DialogueContextValidationError as exc:
+        print(f"Dialogue Stage 1 validation failed: {exc.code}")
+        return 1
+    except (OSError, ValueError):
+        print("Dialogue Stage 1 preparation failed; no executable workspace published")
+        return 1
+    print(f"Stage 1 NOT_EXECUTABLE: {summary['withContext']}/{summary['preparedTargets']} contexts; local-only")
+    return 0
+
+
 def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     research_parser = subparsers.add_parser(
         "research",
@@ -175,6 +195,16 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     pilot_import_p.add_argument("--responses", required=True)
     pilot_import_p.add_argument("--translation-source", required=True)
     pilot_import_p.set_defaults(handler=run_dialogue_pilot_import)
+
+    stage_p = research_subparsers.add_parser(
+        "dialogue-stage-prepare", help="Local-only NON-EXECUTABLE Stage 1 Dialogue Context preparation",
+    )
+    stage_p.add_argument("--enable-dialogue-context", action="store_true", required=True)
+    stage_p.add_argument("--evidence-dir", required=True, help="Complete sealed Phase 1 evidence workspace")
+    stage_p.add_argument("--source-snapshot", required=True, help="Complete normalized English universe")
+    stage_p.add_argument("--batch-plan", required=True, help="Read-only existing prepared target inventory")
+    stage_p.add_argument("--output-dir", required=True, help="Fresh local-only staged directory")
+    stage_p.set_defaults(handler=run_dialogue_stage_prepare)
 
     # bg3loc research classify
     classify_p = research_subparsers.add_parser(

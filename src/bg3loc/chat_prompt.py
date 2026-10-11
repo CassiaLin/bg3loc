@@ -5,6 +5,8 @@ import json
 from typing import Callable
 
 from bg3loc.prompt_assembly import AssembledTranslationPrompt, SAME_ENTITY_CONTEXT_SAFETY_INSTRUCTIONS
+from bg3loc.dialogue_prompt import DIALOGUE_CONTEXT_SAFETY_INSTRUCTIONS
+from bg3loc.dialogue_context import fail
 
 
 @dataclass(frozen=True, slots=True)
@@ -14,6 +16,8 @@ class ChatMessage:
 
 
 def render_chat_messages(prompt: AssembledTranslationPrompt) -> tuple[ChatMessage, ChatMessage]:
+    if prompt.same_entity_context is not None and prompt.dialogue_context is not None:
+        fail("BOTH_CONTEXT_FAMILIES")
     locale_line = "Translate the supplied Baldur's Gate 3 localization text."
     if prompt.source_locale and prompt.target_locale:
         locale_line = (
@@ -43,6 +47,9 @@ def render_chat_messages(prompt: AssembledTranslationPrompt) -> tuple[ChatMessag
     if prompt.same_entity_context is not None:
         system_lines.extend(("", "Related-field context safety:"))
         system_lines.extend(SAME_ENTITY_CONTEXT_SAFETY_INSTRUCTIONS)
+    if prompt.dialogue_context is not None:
+        system_lines.extend(("", "Dialogue context safety:"))
+        system_lines.extend(DIALOGUE_CONTEXT_SAFETY_INSTRUCTIONS)
 
     user_payload = {
         "ContentUid": prompt.content_uid,
@@ -52,6 +59,8 @@ def render_chat_messages(prompt: AssembledTranslationPrompt) -> tuple[ChatMessag
     }
     if prompt.same_entity_context is not None:
         user_payload.update(prompt.same_entity_context.to_dict())
+    if prompt.dialogue_context is not None:
+        user_payload["dialogueContext"] = prompt.dialogue_context.to_dict()
 
     return (
         ChatMessage(role="system", content="\n".join(system_lines)),

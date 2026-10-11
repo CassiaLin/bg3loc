@@ -8,6 +8,7 @@ from typing import Callable, Protocol
 
 from bg3loc.execution_state import ClaimedAttempt, TranslationExecutionStore
 from bg3loc.translation_request import TranslationRequest
+from bg3loc.provider_diagnostics import safe_error_code, safe_error_message
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +33,12 @@ class TranslationFailure:
     provider_request_id: str | None = None
     retry_after_seconds: float | None = None
     usage: ProviderTokenUsage | None = None
+
+    def __post_init__(self) -> None:
+        code = safe_error_code(self.error_code)
+        object.__setattr__(self, 'error_code', code)
+        object.__setattr__(self, 'error_message', safe_error_message(code, self.error_message))
+        object.__setattr__(self, 'provider_request_id', None)
 
 
 TranslationOutcome = TranslationSuccess | TranslationFailure
@@ -104,6 +111,10 @@ def run_worker(
     sleeper: Callable[[float], None] = time.sleep,
     monotonic: Callable[[], float] = time.monotonic,
 ) -> WorkerSummary:
+    from bg3loc.dialogue_execution_contract import reject_dialogue_execution
+    reject_dialogue_execution(store.get_metadata())
+    if getattr(getattr(request_resolver, "__self__", None), "stage2_validation_only", False):
+        reject_dialogue_execution()
     if max_attempts <= 0:
         raise ValueError("max_attempts must be positive")
     if lease_seconds <= 0:
@@ -166,11 +177,13 @@ def run_worker(
             except Exception as exc:
                 outcome = TranslationFailure(
                     error_code="MATERIAL_RESOLUTION_ERROR",
-                    error_message=f"{type(exc).__name__}: {exc}",
+                    error_message="Failure details suppressed",
                     retryable=False,
                 )
             else:
                 try:
+                    if request.dialogue_context is not None:
+                        reject_dialogue_execution()
                     last_request_started = monotonic()
                     # A per-call callback avoids shared mutable "current attempt"
                     # state when provider instances are shared by workers.
@@ -179,17 +192,20 @@ def run_worker(
                         outcome = provider(request)
                     else:
                         def record(provenance, current_claim=claim):
+                            dialogue = provenance.dialogue_context_fingerprint
                             store.record_prompt_provenance(attempt_id=current_claim.attempt_id,
                                 worker_id=worker_id, input_hash=provenance.input_hash,
                                 context_fingerprint=provenance.context_fingerprint,
                                 effective_prompt_hash=provenance.effective_prompt_hash,
                                 chat_messages_fingerprint=provenance.chat_messages_fingerprint,
-                                prompt_renderer_version=provenance.prompt_renderer_version)
+                                prompt_renderer_version=provenance.prompt_renderer_version,
+                                dialogue_context_fingerprint=dialogue,
+                                sent_at=iso_utc(clock()) if dialogue is not None else None)
                         outcome = send(provider, request, record)
                 except Exception as exc:
                     outcome = TranslationFailure(
                         error_code="PROVIDER_EXCEPTION",
-                        error_message=f"{type(exc).__name__}: {exc}",
+                        error_message="Failure details suppressed",
                         retryable=False,
                     )
         if request_resolver is None:
@@ -199,7 +215,7 @@ def run_worker(
             except Exception as exc:
                 outcome = TranslationFailure(
                     error_code="PROVIDER_EXCEPTION",
-                    error_message=f"{type(exc).__name__}: {exc}",
+                    error_message="Failure details suppressed",
                     retryable=False,
                 )
 

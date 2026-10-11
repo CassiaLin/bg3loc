@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import closing
 import json
+import hashlib
 from pathlib import Path
 import tempfile
 import unittest
@@ -195,6 +196,10 @@ class TestProductionCompletionView(unittest.TestCase):
             conn.execute(
                 "UPDATE content_state SET status='succeeded', translated_text='儲存', output_hash='out-stale' WHERE content_uid='uid-stale'"
             )
+
+        with closing(execution.connect()) as conn, conn:
+            for uid, text in [('uid-pass', '你好'), ('uid-review', 'Open the ancient gate'), ('uid-stale', '儲存')]:
+                conn.execute('UPDATE content_state SET output_hash=? WHERE content_uid=?', (hashlib.sha256(text.encode('utf-8')).hexdigest(), uid))
 
         qa = TranslationQaStore(db)
         qa.initialize()

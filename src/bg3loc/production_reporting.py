@@ -10,6 +10,7 @@ import sqlite3
 from typing import Any
 
 from bg3loc.execution_state import EXECUTABLE_STATUSES
+from bg3loc.provider_diagnostics import safe_error_code
 from bg3loc.production_completion import (
     DISPOSITION_MERGE_READY,
     DISPOSITION_WAITING_RETRY,
@@ -197,9 +198,8 @@ def _attempt_and_usage_report(
             round(total_attempts / success_count, 4) if success_count else None
         ),
     }
-    error_breakdown = {
-        str(row["error_code"]): int(row["count"])
-        for row in conn.execute(
+    error_breakdown: dict[str, int] = {}
+    for row in conn.execute(
             """
             SELECT error_code, COUNT(*) AS count
             FROM attempts
@@ -207,8 +207,9 @@ def _attempt_and_usage_report(
             GROUP BY error_code
             ORDER BY count DESC, error_code
             """
-        )
-    }
+        ):
+        code = safe_error_code(row['error_code'])
+        error_breakdown[code] = error_breakdown.get(code, 0) + int(row['count'])
 
     usage_rows = conn.execute(
         f"""

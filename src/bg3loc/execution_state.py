@@ -5,7 +5,9 @@ from dataclasses import dataclass
 from pathlib import Path
 import sqlite3
 import re
+from datetime import datetime
 from typing import Iterable
+from bg3loc.provider_diagnostics import safe_error_code, safe_error_message, safe_attempt_diagnostics
 
 
 EXECUTION_SCHEMA_VERSION = "1.2"
@@ -56,8 +58,18 @@ class TranslationExecutionStore:
         conn.execute("PRAGMA journal_mode = WAL")
         return conn
 
-    def initialize(self) -> None:
+    def initialize(self, *, schema_version: str = EXECUTION_SCHEMA_VERSION) -> None:
         with closing(self.connect()) as conn, conn:
+            from bg3loc.dialogue_context import fail
+            if schema_version not in {EXECUTION_SCHEMA_VERSION, "1.3"}:
+                fail("CONTEXT_CONTRACT_MISMATCH")
+            if conn.execute("SELECT 1 FROM sqlite_master WHERE name='metadata'").fetchone():
+                existing = dict(conn.execute("SELECT key,value FROM metadata"))
+                if existing.get("schemaVersion", "1.2") not in {"1.0", "1.1", "1.2", "1.3"}:
+                    fail("CONTEXT_CONTRACT_MISMATCH")
+                if ((existing.get("schemaVersion") == "1.3" and schema_version != "1.3")
+                        or (schema_version == "1.3" and existing.get("schemaVersion") not in {None, "1.3"})):
+                    fail("CONTEXT_CONTRACT_MISMATCH")
             conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS metadata (
@@ -140,9 +152,11 @@ class TranslationExecutionStore:
             for column in ("context_fingerprint", "effective_prompt_hash", "chat_messages_fingerprint", "prompt_renderer_version"):
                 if column not in attempt_columns:
                     conn.execute(f"ALTER TABLE attempts ADD COLUMN {column} TEXT")
+            if "dialogue_context_fingerprint" not in attempt_columns:
+                conn.execute("ALTER TABLE attempts ADD COLUMN dialogue_context_fingerprint TEXT")
             conn.execute(
                 "INSERT OR REPLACE INTO metadata(key, value) VALUES('schemaVersion', ?)",
-                (EXECUTION_SCHEMA_VERSION,),
+                (schema_version,),
             )
 
     def set_metadata(self, values: dict[str, str]) -> None:
@@ -170,6 +184,8 @@ class TranslationExecutionStore:
         execution_config_hash: str,
         started_at: str,
     ) -> None:
+        from bg3loc.dialogue_execution_contract import reject_dialogue_execution
+        reject_dialogue_execution(self.get_metadata())
         with closing(self.connect()) as conn, conn:
             conn.execute(
                 """
@@ -254,6 +270,8 @@ class TranslationExecutionStore:
         started_at: str,
         max_attempts: int,
     ) -> ClaimedAttempt | None:
+        from bg3loc.dialogue_execution_contract import reject_dialogue_execution
+        reject_dialogue_execution(self.get_metadata())
         if max_attempts <= 0:
             raise ValueError("max_attempts must be positive")
 
@@ -367,12 +385,33 @@ class TranslationExecutionStore:
         prompt_tokens: int | None = None,
         completion_tokens: int | None = None,
         total_tokens: int | None = None,
+        stage3_validation_only: bool = False,
+        _sealed_snapshot=None,
     ) -> None:
+        from bg3loc.dialogue_execution_contract import reject_dialogue_execution
+        if not stage3_validation_only:
+            reject_dialogue_execution(self.get_metadata())
         _validate_usage(prompt_tokens, completion_tokens, total_tokens)
         with closing(self.connect()) as conn, conn:
             conn.execute("BEGIN IMMEDIATE")
             attempt, state = self._load_attempt_and_state(conn, attempt_id)
             self._assert_live_owner(attempt, state, worker_id)
+            if stage3_validation_only:
+                from hashlib import sha256
+                if output_hash != sha256(translated_text.encode("utf-8")).hexdigest():
+                    raise ValueError("offline success output hash mismatch")
+                from bg3loc.dialogue_review import validated_stage3_material
+                from bg3loc.dialogue_context import dialogue_context_from_material
+                if _sealed_snapshot is not None:
+                    if _sealed_snapshot.binding.database.resolve()!=self.path.resolve():raise ValueError("snapshot database mismatch")
+                    context = _sealed_snapshot.current_item(str(attempt["content_uid"]),_connection=conn).dialogue_context
+                else:
+                    row = validated_stage3_material(self.path, validation_only=True)[str(attempt["content_uid"])]
+                    context = dialogue_context_from_material(row)
+                if context is not None and (attempt["dialogue_context_fingerprint"] != context.context_fingerprint
+                        or attempt["context_fingerprint"] is not None or attempt["prompt_renderer_version"] != "dialogue-prompt/1"
+                        or not attempt["effective_prompt_hash"] or not attempt["chat_messages_fingerprint"]):
+                    raise ValueError("HD actual-send provenance required for success")
             conn.execute(
                 """
                 UPDATE attempts
@@ -432,6 +471,9 @@ class TranslationExecutionStore:
         completion_tokens: int | None = None,
         total_tokens: int | None = None,
     ) -> str:
+        error_code = safe_error_code(error_code)
+        error_message = safe_error_message(error_code, error_message)
+        provider_request_id = None
         if max_attempts <= 0:
             raise ValueError("max_attempts must be positive")
         _validate_usage(prompt_tokens, completion_tokens, total_tokens)
@@ -639,27 +681,57 @@ class TranslationExecutionStore:
                 "SELECT * FROM attempts WHERE content_uid = ? ORDER BY attempt_id",
                 (content_uid,),
             ).fetchall()
-            return [dict(row) for row in rows]
+            return [safe_attempt_diagnostics(dict(row)) for row in rows]
 
     def record_prompt_provenance(self, *, attempt_id: int, worker_id: str, input_hash: str,
                                 context_fingerprint: str | None, effective_prompt_hash: str,
-                                chat_messages_fingerprint: str, prompt_renderer_version: str | None) -> None:
-        for value in (context_fingerprint, effective_prompt_hash, chat_messages_fingerprint):
+                                chat_messages_fingerprint: str, prompt_renderer_version: str | None,
+                                dialogue_context_fingerprint: str | None = None, sent_at: str | None = None,
+                                _sealed_snapshot=None) -> None:
+        for value in (context_fingerprint, effective_prompt_hash, chat_messages_fingerprint, dialogue_context_fingerprint):
             if value is not None and (not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None):
                 raise ValueError("invalid prompt provenance fingerprint")
         if not effective_prompt_hash or not chat_messages_fingerprint:
             raise ValueError("actual prompt and messages provenance required")
-        values = (context_fingerprint, effective_prompt_hash, chat_messages_fingerprint, prompt_renderer_version)
+        if context_fingerprint is not None and dialogue_context_fingerprint is not None:
+            raise ValueError("both context provenance families are invalid")
+        if (dialogue_context_fingerprint is not None) != (prompt_renderer_version == "dialogue-prompt/1"):
+            raise ValueError("dialogue provenance renderer mismatch")
+        values = (context_fingerprint, effective_prompt_hash, chat_messages_fingerprint, prompt_renderer_version, dialogue_context_fingerprint)
         with closing(self.connect()) as conn, conn:
             conn.execute("BEGIN IMMEDIATE")
             attempt, state = self._load_attempt_and_state(conn, attempt_id)
             self._assert_live_owner(attempt, state, worker_id)
             if input_hash != attempt["input_hash"] or input_hash != state["input_hash"]:
                 raise ValueError("attempt input identity mismatch")
-            previous = tuple(attempt[name] for name in ("context_fingerprint", "effective_prompt_hash", "chat_messages_fingerprint", "prompt_renderer_version"))
+            from bg3loc.dialogue_review import validated_stage3_material, is_dialogue_workspace
+            if dialogue_context_fingerprint is not None or is_dialogue_workspace(self.path):
+                from bg3loc.dialogue_context import dialogue_context_from_material
+                if _sealed_snapshot is not None:
+                    if _sealed_snapshot.binding.database.resolve()!=self.path.resolve():raise ValueError("snapshot database mismatch")
+                    context = _sealed_snapshot.current_item(str(attempt["content_uid"]),_connection=conn).dialogue_context
+                else:
+                    row = validated_stage3_material(self.path, validation_only=True)[str(attempt["content_uid"])]
+                    context = dialogue_context_from_material(row)
+                if ((context is None and dialogue_context_fingerprint is not None) or
+                        (context is not None and context.context_fingerprint != dialogue_context_fingerprint)):
+                    raise ValueError("dialogue provenance does not match current sealed material")
+                if context is not None:
+                    self._validate_hd_send_lease(state, sent_at)
+            previous = tuple(attempt[name] for name in ("context_fingerprint", "effective_prompt_hash", "chat_messages_fingerprint", "prompt_renderer_version", "dialogue_context_fingerprint"))
             if any(value is not None for value in previous) and previous != values:
                 raise ValueError("attempt prompt provenance is already bound")
-            conn.execute("UPDATE attempts SET context_fingerprint=?,effective_prompt_hash=?,chat_messages_fingerprint=?,prompt_renderer_version=? WHERE attempt_id=?", (*values, attempt_id))
+            conn.execute("UPDATE attempts SET context_fingerprint=?,effective_prompt_hash=?,chat_messages_fingerprint=?,prompt_renderer_version=?,dialogue_context_fingerprint=? WHERE attempt_id=?", (*values, attempt_id))
+
+    @staticmethod
+    def _validate_hd_send_lease(state, sent_at):
+        try:
+            now = datetime.fromisoformat(sent_at.replace("Z", "+00:00"))
+            expiry = datetime.fromisoformat(state["lease_expires_at"].replace("Z", "+00:00"))
+            if now.tzinfo is None or expiry.tzinfo is None or now >= expiry:
+                raise ValueError("expired HD send lease")
+        except (AttributeError, TypeError, ValueError):
+            raise ValueError("valid current HD send lease required") from None
 
     @staticmethod
     def _load_attempt_and_state(

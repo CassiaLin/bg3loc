@@ -9,3 +9,4 @@ class PromptProvenance:
     effective_prompt_hash: str
     chat_messages_fingerprint: str
     prompt_renderer_version: str | None
+    dialogue_context_fingerprint: str | None = None

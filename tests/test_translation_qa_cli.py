@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 import tempfile
 import unittest
@@ -75,7 +76,7 @@ class TestTranslationQaCli(unittest.TestCase):
             attempt_id=claim.attempt_id,
             worker_id="worker",
             translated_text=target,
-            output_hash="output-hash",
+            output_hash=hashlib.sha256(target.encode('utf-8')).hexdigest(),
             finished_at="2026-09-23T00:00:02Z",
         )
         return db, plan_dir / "batch-plan.json"

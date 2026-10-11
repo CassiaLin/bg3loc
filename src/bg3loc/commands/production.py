@@ -68,6 +68,9 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     prepare_p.add_argument("--story-ledger", help="Optional story-occurrence-ledger.csv")
     prepare_p.add_argument("--ui-skill-universe", help="Optional ui-skill-universe.csv")
     prepare_p.add_argument("--structural-provenance", help="Public structural provenance directory; enable prepare-time inline context")
+    prepare_p.add_argument("--dialogue-evidence", help="Complete sealed native dialogue evidence; explicit 1.3 opt-in (transport remains disabled)")
+    prepare_p.add_argument("--source-scan", help="Source extract build attestation scan")
+    prepare_p.add_argument("--research-summary", help="Complete source research build/version attestation")
     prepare_p.add_argument("--unclassified-decisions", help="Optional unclassified decision JSONL")
     prepare_p.add_argument(
         "--max-records",
@@ -233,6 +236,9 @@ def run_prepare(args: argparse.Namespace) -> int:
             ),
             max_records=tuple(args.max_records),
             structural_provenance=(Path(args.structural_provenance) if getattr(args, "structural_provenance", None) else None),
+            dialogue_evidence=Path(args.dialogue_evidence) if getattr(args,"dialogue_evidence",None) else None,
+            source_scan=Path(args.source_scan) if getattr(args,"source_scan",None) else None,
+            research_summary=Path(args.research_summary) if getattr(args,"research_summary",None) else None,
         )
     )
     print("Production prepare PASS")

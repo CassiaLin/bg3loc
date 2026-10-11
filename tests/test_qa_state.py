@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from contextlib import closing
+import hashlib
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -21,7 +23,7 @@ from bg3loc.qa_state import (
 
 
 class TestTranslationQaState(unittest.TestCase):
-    def _completed_db(self) -> tuple[tempfile.TemporaryDirectory, Path]:
+    def _completed_db(self, source='Hello', text='你好') -> tuple[tempfile.TemporaryDirectory, Path]:
         temp = tempfile.TemporaryDirectory()
         db = Path(temp.name) / "execution.sqlite3"
         execution = TranslationExecutionStore(db)
@@ -50,10 +52,16 @@ class TestTranslationQaState(unittest.TestCase):
         execution.complete_success(
             attempt_id=claim.attempt_id,
             worker_id="worker-a",
-            translated_text="你好",
-            output_hash="output-a",
+            translated_text=text,
+            output_hash=hashlib.sha256(text.encode('utf-8')).hexdigest(),
             finished_at="2026-09-23T00:00:02Z",
         )
+        plan = db.parent / 'plan'
+        (plan / 'materials').mkdir(parents=True)
+        (plan / 'batch-plan.json').write_text(json.dumps({'batches':[
+            {'batchId':'batch-a','primaryCategory':'dialogue_general','recordCount':1}]}), encoding='utf-8')
+        (plan / 'materials/batch-a.jsonl').write_text(json.dumps({'ContentUid':'uid-a',
+            'SourceText':source,'primaryCategory':'dialogue_general','batchId':'batch-a'})+'\n', encoding='utf-8')
         return temp, db
 
     def test_record_and_read_checked_result(self) -> None:
@@ -136,7 +144,7 @@ class TestTranslationQaState(unittest.TestCase):
         self.assertEqual(stored.qa_status, QA_STATUS_STALE)
 
     def test_issue_rows_are_persisted_for_review_queue(self) -> None:
-        temp, db = self._completed_db()
+        temp, db = self._completed_db('Open the ancient gate','Open the ancient gate')
         self.addCleanup(temp.cleanup)
 
         qa = TranslationQaStore(db)
@@ -199,7 +207,7 @@ class TestTranslationQaState(unittest.TestCase):
         rejected = qa.get_rejected_candidates("uid-a")
         self.assertEqual(len(rejected), 1)
         self.assertEqual(rejected[0]["translated_text"], "你好")
-        self.assertEqual(rejected[0]["output_hash"], "output-a")
+        self.assertEqual(rejected[0]["output_hash"], hashlib.sha256('你好'.encode('utf-8')).hexdigest())
         self.assertEqual(rejected[0]["route"], QA_ROUTE_RETRY)
 
         second = execution.claim_next(

@@ -2,10 +2,45 @@
 from __future__ import annotations
 
 from collections import Counter
+import json
 from pathlib import Path
+import re
 
 from bg3loc.research.dialogue_policy import VERSION, render_research, speaker_relation
 from bg3loc.research.structural_provenance import canonical_json, definition_fingerprint
+from bg3loc.protected_syntax import extract_protected_tokens, validate_protected_syntax
+
+_REVIEW_FIELDS = {"caseId", "targetSource", "possiblePredecessors", "possibleSuccessors", "translations", "assessment"}
+_ASSESSMENT_FIELDS = {"worseVariant", "sourceAbsentInformation", "branchMisunderstanding",
+                      "alternativesTreatedAsSequence", "speakerMisleading", "contextTranslatedIntoTarget",
+                      "noObservableDifference"}
+_HTML_TAG = re.compile(r'''<\s*/?\s*[A-Za-z][\w:-]*\b(?:"[^"]*"|'[^']*'|[^'">])*>''')
+_HTML_MARKER = re.compile(r"<\s*/?\s*[A-Za-z]")
+
+
+def _strict_pairs(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result: raise ValueError("duplicate JSON object field in pilot artifact")
+        result[key] = value
+    return result
+
+
+def _pilot_rows(path: Path):
+    with path.open(encoding="utf-8-sig") as stream:
+        for line in stream:
+            if line.strip():
+                row = json.loads(line, object_pairs_hook=_strict_pairs)
+                if not isinstance(row, dict): raise ValueError("pilot row must be an object")
+                yield row
+
+
+def _markup_lexemes(text: str) -> list[str]:
+    tags = list(_HTML_TAG.finditer(text))
+    if any(not any(tag.start() <= marker.start() < tag.end() for tag in tags)
+           for marker in _HTML_MARKER.finditer(text)):
+        raise ValueError("malformed pilot HTML markup")
+    return [tag.group(0) for tag in tags]
 
 
 def strata(context: dict, category: str) -> set[str]:
@@ -77,26 +112,50 @@ def import_responses(package: Path, response_path: Path, translation_source: str
     Translation source is a descriptive provenance label, never a provider call.
     No safety judgement is inferred from receiving outputs.
     """
-    from bg3loc.research.dialogue_policy import rows
     if not translation_source.strip(): raise ValueError("translation source label required")
-    request_rows=list(rows(package/'requests.jsonl'))
-    import json
+    request_rows=list(_pilot_rows(package/'requests.jsonl'))
     manifest=json.loads((package/'pilot-summary.json').read_text(encoding='utf-8'))
     requests={r['requestId']:r for r in request_rows}
     if (definition_fingerprint(request_rows)!=manifest['requestFingerprint']
         or len(requests)!=len(request_rows) or len(requests)!=manifest['requestCount']
         or len(requests)!=2*manifest['sampleSize']):
         raise ValueError("pilot request seal or inventory mismatch")
+    # Read only neutral pairing columns. Never consult or emit the hidden
+    # condition, policy or UID columns in this import/review-preparation stage.
+    assignments = {}
+    pairs = set()
+    for row in _pilot_rows(package/'assignments-local-only.jsonl'):
+        binding = {field: row[field] for field in ('requestId', 'caseId', 'variantId')}
+        rid = binding['requestId']; pair = (binding['caseId'], binding['variantId'])
+        if rid in assignments or pair in pairs or rid not in requests:
+            raise ValueError("duplicate or unknown pilot assignment binding")
+        if any(binding[field] != requests[rid][field] for field in ('caseId', 'variantId')):
+            raise ValueError("pilot assignment/request pairing mismatch")
+        assignments[rid] = binding; pairs.add(pair)
+    if assignments.keys() != requests.keys(): raise ValueError("pilot assignment inventory incomplete")
     outputs={}
-    for row in rows(response_path):
-        if set(row)!={'requestId','translationText'} or row['requestId'] not in requests:
+    for row in _pilot_rows(response_path):
+        if set(row)!={'requestId','translationText'} or not isinstance(row['requestId'],str) or row['requestId'] not in requests:
             raise ValueError("unexpected external response")
         if row['requestId'] in outputs: raise ValueError("duplicate external response")
         if not isinstance(row['translationText'],str) or not row['translationText'].strip():
             raise ValueError("nonempty translationText required")
+        source = requests[row['requestId']]['data']['targetSource']
+        if validate_protected_syntax(extract_protected_tokens(source), row['translationText']):
+            raise ValueError("pilot response protected runtime syntax invalid")
+        if _markup_lexemes(source) != _markup_lexemes(row['translationText']):
+            raise ValueError("pilot response original HTML markup changed")
         outputs[row['requestId']]=row['translationText']
     if outputs.keys()!=requests.keys(): raise ValueError("external response inventory incomplete")
-    review={r['caseId']:r for r in rows(package/'blind-review-template.jsonl')}
+    review = {}
+    for row in _pilot_rows(package/'blind-review-template.jsonl'):
+        if (set(row) != _REVIEW_FIELDS or set(row['translations']) != {'variant-1','variant-2'}
+            or set(row['assessment']) != _ASSESSMENT_FIELDS
+            or any(value is not None for value in row['assessment'].values())
+            or any(value is not None for value in row['translations'].values())):
+            raise ValueError("pilot blind template fields or unevaluated state invalid")
+        if row['caseId'] in review: raise ValueError("duplicate pilot review case")
+        review[row['caseId']] = row
     cases={r['caseId'] for r in request_rows}
     if set(review)!=cases or any({r['variantId'] for r in request_rows if r['caseId']==case}!= {'variant-1','variant-2'} for case in cases):
         raise ValueError("pilot case bindings mismatch")
@@ -104,7 +163,14 @@ def import_responses(package: Path, response_path: Path, translation_source: str
         request=requests[rid]
         if request['data']['targetSource']!=review[request['caseId']]['targetSource']:
             raise ValueError("pilot review target binding mismatch")
-        review[request['caseId']]['translations'][request['variantId']]=text
+        binding=assignments[rid]
+        review[binding['caseId']]['translations'][binding['variantId']]=text
+    for case in cases:
+        context_data = [r['data'] for r in request_rows if r['caseId'] == case and 'possiblePredecessors' in r['data']]
+        if len(context_data) != 1 or any(
+            review[case][field] != [line['sourceText'] for line in context_data[0][field]]
+            for field in ('possiblePredecessors', 'possibleSuccessors')):
+            raise ValueError("pilot review context binding mismatch")
     (package/'blind-review-ready.jsonl').write_text(
         ''.join(canonical_json(review[k])+'\n' for k in sorted(review)),encoding='utf-8')
     result={'schemaVersion':VERSION,'translationSource':translation_source,'translationsReceived':len(outputs),

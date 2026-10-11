@@ -8,6 +8,11 @@ from typing import Mapping
 
 from bg3loc.translation_request import TranslationRequest
 from bg3loc.same_entity_context import validate_same_entity_context
+from bg3loc.dialogue_context import decode_dialogue_context, fail
+from bg3loc.dialogue_prompt import (
+    DialoguePromptContext, DIALOGUE_PROMPT_VERSION, DIALOGUE_SAFETY_VERSION,
+    DIALOGUE_CONTEXT_SAFETY_INSTRUCTIONS, project_dialogue_context,
+)
 
 
 # Production-owned instruction policy; never supplied by mutable configuration.
@@ -109,6 +114,13 @@ class AssembledTranslationPrompt:
     ruleset_fingerprint: str
     effective_prompt_hash: str
     same_entity_context: SameEntityPromptContext | None = None
+    dialogue_context: DialoguePromptContext | None = None
+
+    def __post_init__(self) -> None:
+        if self.same_entity_context is not None and self.dialogue_context is not None:
+            fail("BOTH_CONTEXT_FAMILIES")
+        if self.dialogue_context is not None and type(self.dialogue_context) is not DialoguePromptContext:
+            fail()
 
 
 def assemble_translation_prompt(
@@ -123,6 +135,15 @@ def assemble_translation_prompt(
 
     instructions = tuple(ruleset.common_rules) + tuple(category_rules)
     context = request.same_entity_context
+    dialogue = request.dialogue_context
+    if context is not None and dialogue is not None:
+        fail("BOTH_CONTEXT_FAMILIES")
+    dialogue_projection = None
+    if dialogue is not None:
+        dialogue = decode_dialogue_context(dialogue.to_dict(), content_uid=request.content_uid,
+            category=request.primary_category, source_text=request.source_text,
+            source_locale=ruleset.source_locale)
+        dialogue_projection = project_dialogue_context(dialogue)
     # Revalidate direct callers as well as resolver-produced requests. This
     # checks sealed integrity/binding only, never upstream structural evidence.
     validate_same_entity_context(context, content_uid=request.content_uid,
@@ -153,6 +174,11 @@ def assemble_translation_prompt(
     if projection is not None:
         effective_payload.update(projection.to_dict())
         effective_payload["sameEntityContextInstructions"] = list(SAME_ENTITY_CONTEXT_SAFETY_INSTRUCTIONS)
+    if dialogue_projection is not None:
+        effective_payload["dialogueContext"] = dialogue_projection.to_dict()
+        effective_payload["dialogueContextInstructions"] = list(DIALOGUE_CONTEXT_SAFETY_INSTRUCTIONS)
+        effective_payload["promptRendererVersion"] = DIALOGUE_PROMPT_VERSION
+        effective_payload["promptSafetyVersion"] = DIALOGUE_SAFETY_VERSION
     raw = json.dumps(
         effective_payload,
         ensure_ascii=False,
@@ -174,4 +200,5 @@ def assemble_translation_prompt(
         ruleset_fingerprint=ruleset_fingerprint,
         effective_prompt_hash=effective_prompt_hash,
         same_entity_context=projection,
+        dialogue_context=dialogue_projection,
     )

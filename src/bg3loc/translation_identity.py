@@ -4,11 +4,13 @@ import hashlib
 import json
 
 from bg3loc import prompt_assembly
+from bg3loc.dialogue_context import DialogueContext, decode_dialogue_context, fail
 from bg3loc.same_entity_context import (
     SCHEMA_VERSION, POLICY_VERSION, SameEntityContext, validate_same_entity_context,
 )
 
 INPUT_IDENTITY_VERSION = "translation-input/2"
+DIALOGUE_INPUT_IDENTITY_VERSION = "translation-input/3"
 
 
 def identity_fingerprint(payload: dict) -> str:
@@ -35,13 +37,21 @@ class TranslationInputParameters:
 
 def translation_input_hash(*, content_uid: str, source_text: str, category: str,
                            protected_syntax: object, parameters: TranslationInputParameters,
-                           context: SameEntityContext | None = None) -> str:
+                           context: SameEntityContext | None = None,
+                           dialogue_context: DialogueContext | None = None) -> str:
     """Absent: exact old payload. Present: conditional versioned context binding.
 
     No workspace paths, timestamps, summary, partition or global corpus digest
     enter the item hash. The prepared fingerprint binds the canonical context;
     rendering version and fixed policy digest bind its effective prompt semantics.
     """
+    if context is not None and dialogue_context is not None:
+        fail("BOTH_CONTEXT_FAMILIES")
+    if dialogue_context is not None:
+        if type(dialogue_context) is not DialogueContext:
+            fail()
+        decode_dialogue_context(dialogue_context.to_dict(), content_uid=content_uid,
+            category=category, source_text=source_text, source_locale=parameters.source_locale)
     validate_same_entity_context(context, content_uid=content_uid, category=category, source_text=source_text)
     payload = {"ContentUid": content_uid, "SourceText": source_text, "primaryCategory": category,
                "protectedSyntax": protected_syntax, "promptVersion": parameters.prompt_version,
@@ -54,6 +64,10 @@ def translation_input_hash(*, content_uid: str, source_text: str, category: str,
             "promptRendererVersion": prompt_assembly.SAME_ENTITY_PROMPT_VERSION,
             "promptPolicyFingerprint": prompt_policy_fingerprint(),
         })
+    if dialogue_context is not None:
+        from bg3loc.dialogue_execution_contract import dialogue_identity_descriptor
+        payload.update(inputIdentityVersion=DIALOGUE_INPUT_IDENTITY_VERSION,
+                       dialogueContext=dialogue_identity_descriptor(dialogue_context))
     return identity_fingerprint(payload)
 
 

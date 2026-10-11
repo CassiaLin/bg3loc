@@ -38,6 +38,9 @@ class ProductionPrepareRequest:
     unclassified_decisions: Path | None = None
     max_records: tuple[str, ...] = ()
     structural_provenance: Path | None = None
+    dialogue_evidence: Path | None = None
+    source_scan: Path | None = None
+    research_summary: Path | None = None
 
 
 def _sha256_file(path: Path) -> str:
@@ -87,7 +90,10 @@ def _manifest_source_path(
     )
 
 
-def prepare_production_workspace(request: ProductionPrepareRequest) -> dict[str, Any]:
+def prepare_production_workspace(request: ProductionPrepareRequest, *, archive_backend=None) -> dict[str, Any]:
+    if request.dialogue_evidence is not None:
+        from bg3loc.production_dialogue_prepare import prepare_dialogue_workspace
+        return prepare_dialogue_workspace(request, archive_backend=archive_backend)
     _require_file(request.extract_manifest, "extract manifest")
     _require_file(request.source, "normalized source")
     if not request.research_mappings.is_file():

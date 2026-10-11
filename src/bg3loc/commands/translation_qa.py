@@ -11,6 +11,8 @@ from bg3loc.execution_state import STATUS_SUCCEEDED, TranslationExecutionStore
 from bg3loc.protected_syntax import extract_protected_tokens
 from bg3loc.qa import QA_ROUTE_RETRY, QA_ROUTE_REVIEW, QA_RULESET_VERSION, QaInput, QaIssue, QaResult, evaluate_translation
 from bg3loc.qa_state import QA_STATUS_CHECKED, TranslationQaStore
+from bg3loc.dialogue_review import apply_dialogue_semantic_review, is_dialogue_workspace, validated_stage3_material
+from bg3loc.dialogue_context import dialogue_context_from_material
 from bg3loc.production_review import (
     ProductionReviewStore,
     REVIEW_DECISION_ACCEPT,
@@ -63,6 +65,11 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     review_resolve_p.add_argument("--reviewer", required=True)
     review_resolve_p.add_argument("--note", default="")
     review_resolve_p.add_argument("--text")
+    review_resolve_p.add_argument("--batch-plan", help="Prepared target source for technical REVISE validation")
+    review_resolve_p.add_argument("--expected-input-hash")
+    review_resolve_p.add_argument("--expected-output-hash")
+    review_resolve_p.add_argument("--expected-qa-input-hash")
+    review_resolve_p.add_argument("--expected-qa-ruleset-version")
     review_resolve_p.set_defaults(handler=run_review_resolve)
     retry_p = subs.add_parser(
         "retry-handoff",
@@ -115,49 +122,59 @@ def run_qa(args: argparse.Namespace) -> int:
     qa_store.initialize()
 
     states = execution.list_states_by_status(STATUS_SUCCEEDED)
+    validated = None
+    if is_dialogue_workspace(db):
+        validated = validated_stage3_material(db, batch_plan=batch_plan,
+            validation_only=getattr(args, "stage3_validation_only", False))
     checked = 0
     skipped_current = 0
     route_counts: dict[str, int] = {}
     current_batch_id: str | None = None
     material_rows: dict[str, dict[str, object]] = {}
 
-    for state in states:
-        if args.max_items is not None and checked >= int(args.max_items):
-            break
+    from contextlib import nullcontext
+    from bg3loc.legacy_qa_material import LegacyQaMaterial
+    with (LegacyQaMaterial(db, batch_plan) if validated is None else nullcontext(None)) as legacy:
+        for state in states:
+            if args.max_items is not None and checked >= int(args.max_items):
+                break
 
-        uid = str(state["content_uid"])
-        existing = qa_store.get_result(uid, current_rule_set_version=QA_RULESET_VERSION)
-        if existing is not None and existing.qa_status == QA_STATUS_CHECKED:
-            skipped_current += 1
-            continue
+            uid = str(state["content_uid"])
+            batch_id = str(state["batch_id"])
+            if batch_id != current_batch_id:
+                material_rows = _read_material_batch(batch_plan, batch_id)
+                current_batch_id = batch_id
 
-        batch_id = str(state["batch_id"])
-        if batch_id != current_batch_id:
-            material_rows = _read_material_batch(batch_plan, batch_id)
-            current_batch_id = batch_id
+            row = validated.get(uid) if validated is not None else material_rows.get(uid)
+            if row is None:
+                raise RuntimeError(f"ContentUid {uid} missing from material for {batch_id}")
+            from bg3loc.dialogue_execution_contract import guard_material_family
+            guard_material_family(row, "1.3" if validated is not None else None)
+            dialogue_required = dialogue_context_from_material(row) is not None
+            existing = qa_store.get_result(uid, current_rule_set_version=QA_RULESET_VERSION,
+                                          dialogue_context_required=dialogue_required, _material_snapshot=legacy)
+            if existing is not None and existing.qa_status == QA_STATUS_CHECKED:
+                skipped_current += 1
+                continue
 
-        row = material_rows.get(uid)
-        if row is None:
-            raise RuntimeError(f"ContentUid {uid} missing from material for {batch_id}")
+            source_text = str(row.get("sourceText", row.get("SourceText", "")))
+            category = str(row.get("primaryCategory", ""))
+            translated_text = str(state.get("translated_text") or "")
 
-        source_text = str(row.get("sourceText", row.get("SourceText", "")))
-        category = str(row.get("primaryCategory", ""))
-        translated_text = str(state.get("translated_text") or "")
-
-        result = evaluate_translation(
-            QaInput(
-                content_uid=uid,
-                source_text=source_text,
-                translated_text=translated_text,
-                primary_category=category,
-                required_protected_tokens=tuple(extract_protected_tokens(source_text)),
+            result = evaluate_translation(
+                QaInput(
+                    content_uid=uid,
+                    source_text=source_text,
+                    translated_text=translated_text,
+                    primary_category=category,
+                    required_protected_tokens=tuple(extract_protected_tokens(source_text)),
+                )
             )
-        )
-        qa_store.record_result(result, checked_at=_utc_now_iso(),
-            expected_input_hash=str(state["input_hash"]), expected_output_hash=str(state["output_hash"] or ""))
-        checked += 1
-        route_counts[result.route] = route_counts.get(result.route, 0) + 1
-
+            result = apply_dialogue_semantic_review(result, dialogue_context_present=dialogue_required)
+            qa_store.record_result(result, checked_at=_utc_now_iso(),
+                expected_input_hash=str(state["input_hash"]), expected_output_hash=str(state["output_hash"] or ""))
+            checked += 1
+            route_counts[result.route] = route_counts.get(result.route, 0) + 1
     print(f"QA ruleset version: {QA_RULESET_VERSION}")
     print(f"Succeeded execution rows: {len(states)}")
     print(f"Checked this run: {checked}")
@@ -232,6 +249,10 @@ def run_review_export(args: argparse.Namespace) -> int:
 
     qa_store = TranslationQaStore(db)
     qa_store.initialize()
+    validated = None
+    if is_dialogue_workspace(db):
+        validated = validated_stage3_material(db, batch_plan=batch_plan,
+            validation_only=getattr(args, "stage3_validation_only", False))
     rows = qa_store.list_by_route(
         QA_ROUTE_REVIEW,
         current_rule_set_version=QA_RULESET_VERSION,
@@ -274,6 +295,22 @@ def run_review_export(args: argparse.Namespace) -> int:
                 "Reviewer": "",
                 "Note": "",
             }
+            if validated is not None:
+                source = validated[qa.content_uid]
+                required = dialogue_context_from_material(source) is not None
+                current = qa_store.get_result(qa.content_uid, current_rule_set_version=QA_RULESET_VERSION,
+                                              dialogue_context_required=required)
+                if current is None or current.qa_status != QA_STATUS_CHECKED:
+                    continue
+                refreshed = validated_stage3_material(db, batch_plan=batch_plan, validation_only=True)[qa.content_uid]
+                if (refreshed != source or current.execution_input_hash != qa.execution_input_hash
+                        or str(state["input_hash"]) != current.execution_input_hash
+                        or str(state["output_hash"]) != current.output_hash or current.qa_input_hash != qa.qa_input_hash):
+                    raise ValueError("review export snapshot changed")
+                payload["ExecutionInputHash"] = current.execution_input_hash
+                if required:
+                    from bg3loc.dialogue_prompt import project_dialogue_context
+                    payload["dialogueContext"] = project_dialogue_context(dialogue_context_from_material(source)).to_dict()
             handle.write(
                 json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
             )
@@ -307,6 +344,12 @@ def run_review_resolve(args: argparse.Namespace) -> int:
         note=str(args.note),
         resolved_at=_utc_now_iso(),
         revised_text=str(args.text) if args.text is not None else None,
+        batch_plan_path=getattr(args, "batch_plan", None),
+        stage3_validation_only=getattr(args, "stage3_validation_only", False),
+        expected_execution_input_hash=getattr(args, "expected_input_hash", None),
+        expected_output_hash=getattr(args, "expected_output_hash", None),
+        expected_qa_input_hash=getattr(args, "expected_qa_input_hash", None),
+        expected_qa_rule_set_version=getattr(args, "expected_qa_ruleset_version", None),
     )
 
     print(f"ContentUid: {resolution.content_uid}")
@@ -363,6 +406,8 @@ def run_retry_handoff(args: argparse.Namespace) -> int:
         result,
         max_attempts=int(args.max_attempts),
         rejected_at=f"qa-retry:{QA_RULESET_VERSION}",
+        expected_input_hash=stored.execution_input_hash,
+        expected_output_hash=stored.output_hash,
     )
     rejected = qa_store.get_rejected_candidates(stored.content_uid)
     print(f"ContentUid: {stored.content_uid}")

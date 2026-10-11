@@ -216,3 +216,67 @@ def test_public_runner_aggregate_schema_and_package_creation(tmp_path):
     SchemaStore().validate('research/dialogue-context-policy-evaluation-v1.schema.json',r)
     assert r['recommendation']=='A' and r['status']['safetyValidation']=='PENDING'
     assert r['pilot']['sampleSize']==2 and r['productionIntegration'] is False
+
+
+def import_fixture(tmp_path, target='Fictional target'):
+    g=branch();s=english(1,2,3,4);s[uid(1)]=target
+    inv={u:'dialogue_general' for u in s};_,c=evaluate(g,inv,s)
+    package=tmp_path/'pilot';prepare_pilot(package,inv,s,c)
+    requests=[json.loads(line) for line in (package/'requests.jsonl').read_text().splitlines()]
+    responses=tmp_path/'responses.jsonl'
+    payload=[{'requestId':r['requestId'],'translationText':r['data']['targetSource']} for r in requests]
+    responses.write_text(''.join(json.dumps(row)+'\n' for row in payload))
+    return package,responses,payload
+
+
+@pytest.mark.parametrize('target,broken',[
+    ('Fictional {Name} %1$s','Fictional %1$s'),
+    ('Fictional {Name}','Fictional {Other}'),
+    ('<i>Fictional</i><br>','Fictional<br>'),
+    ('<i>Fictional</i>','<i>Fictional'),
+    ('<LSTag Type="Fictional">Fictional</LSTag>','<LSTag Type="Other">Fictional</LSTag>'),
+])
+def test_import_rejects_syntax_changes_without_writing_review(tmp_path,target,broken):
+    package,responses,payload=import_fixture(tmp_path,target)
+    requests={r['requestId']:r for r in (json.loads(x) for x in (package/'requests.jsonl').read_text().splitlines())}
+    row=next(r for r in payload if requests[r['requestId']]['data']['targetSource']==target)
+    row['translationText']=broken
+    responses.write_text(''.join(json.dumps(r)+'\n' for r in payload))
+    with pytest.raises(ValueError): import_responses(package,responses,'fictional source')
+    assert not (package/'blind-review-ready.jsonl').exists()
+
+
+@pytest.mark.parametrize('artifact', ['assignments-local-only.jsonl','blind-review-template.jsonl'])
+def test_import_rejects_duplicate_neutral_pair_bindings(tmp_path,artifact):
+    package,responses,_=import_fixture(tmp_path)
+    path=package/artifact;lines=path.read_text().splitlines();path.write_text('\n'.join(lines+[lines[0]])+'\n')
+    with pytest.raises(ValueError,match='duplicate'): import_responses(package,responses,'fictional source')
+
+
+def test_import_rejects_leaking_template_and_mismatched_neutral_assignment(tmp_path):
+    package,responses,_=import_fixture(tmp_path)
+    path=package/'blind-review-template.jsonl';original=path.read_text()
+    records=[json.loads(line) for line in original.splitlines()];records[0]['condition']='fictional hidden condition'
+    path.write_text(''.join(json.dumps(r)+'\n' for r in records))
+    with pytest.raises(ValueError,match='template fields'): import_responses(package,responses,'fictional source')
+    path.write_text(original)
+    path=package/'assignments-local-only.jsonl';records=[json.loads(line) for line in path.read_text().splitlines()]
+    records[0]['caseId']='case-wrong';path.write_text(''.join(json.dumps(r)+'\n' for r in records))
+    with pytest.raises(ValueError,match='pairing mismatch'): import_responses(package,responses,'fictional source')
+
+
+def test_import_preserves_markup_and_is_deterministic_without_condition_output(tmp_path):
+    package,responses,payload=import_fixture(tmp_path,'<i>Fictional {Name}</i><br> %d')
+    import_responses(package,responses,'fictional source');first=(package/'blind-review-ready.jsonl').read_bytes()
+    responses.write_text(''.join(json.dumps(r)+'\n' for r in reversed(payload)))
+    import_responses(package,responses,'fictional source')
+    assert first==(package/'blind-review-ready.jsonl').read_bytes()
+    data=[json.loads(line) for line in first.decode().splitlines()]
+    assert all(set(row)=={'caseId','targetSource','possiblePredecessors','possibleSuccessors','translations','assessment'} for row in data)
+    assert all(all(v is None for v in row['assessment'].values()) for row in data)
+
+
+def test_import_rejects_duplicate_JSON_fields(tmp_path):
+    package,responses,payload=import_fixture(tmp_path)
+    responses.write_text('{"requestId":"wrong","requestId":'+json.dumps(payload[0]['requestId'])+',"translationText":"Fictional"}\n')
+    with pytest.raises(ValueError,match='duplicate JSON'): import_responses(package,responses,'fictional source')

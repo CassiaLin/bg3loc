@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import closing, redirect_stdout
 import io
 import json
+import hashlib
 from pathlib import Path
 import tempfile
 import unittest
@@ -82,6 +83,12 @@ class TestProductionCli(unittest.TestCase):
                 "SET status='succeeded', translated_text='Open the ancient gate', output_hash='out-review' "
                 "WHERE content_uid='uid-review'"
             )
+
+        with closing(execution.connect()) as conn, conn:
+            conn.execute("UPDATE content_state SET output_hash=? WHERE content_uid=?", (hashlib.sha256('你好'.encode('utf-8')).hexdigest(), 'uid-pass'))
+
+        with closing(execution.connect()) as conn, conn:
+            conn.execute("UPDATE content_state SET output_hash=? WHERE content_uid=?", (hashlib.sha256('Open the ancient gate'.encode('utf-8')).hexdigest(), 'uid-review'))
 
         qa = TranslationQaStore(db)
         qa.initialize()

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from contextlib import closing
+from contextlib import closing, nullcontext, ExitStack
 from dataclasses import dataclass
 import json
 from pathlib import Path
 import sqlite3
+import hashlib
 from typing import Mapping
 
 from bg3loc.execution_state import (
@@ -65,6 +66,7 @@ def derive_production_disposition(
     primary_category: str,
     qa_result: StoredQaResult | None,
     human_review_accepted: bool = False,
+    dialogue_context_required: bool = False,
 ) -> ProductionDisposition:
     content_uid = str(execution_state.get("content_uid") or "")
     batch_id = str(execution_state.get("batch_id") or "")
@@ -117,6 +119,14 @@ def derive_production_disposition(
     elif qa_result.output_hash != output_hash:
         disposition = DISPOSITION_BLOCKED
         reason_code = REASON_QA_OUTPUT_MISMATCH
+    elif dialogue_context_required and (qa_result.execution_input_hash != str(execution_state.get("input_hash") or "")
+            or hashlib.sha256(str(translated_text).encode("utf-8")).hexdigest() != output_hash):
+        disposition = DISPOSITION_BLOCKED
+        reason_code = REASON_QA_STALE
+    elif dialogue_context_required and qa_result.route in {QA_ROUTE_PASS, QA_ROUTE_REVIEW} and (
+            qa_result.route != QA_ROUTE_REVIEW or not _semantic_gate_present(qa_result.issues)):
+        disposition = DISPOSITION_BLOCKED
+        reason_code = "DIALOGUE_REVIEW_GATE_NOT_APPLIED"
     elif qa_result.route == QA_ROUTE_PASS:
         disposition = DISPOSITION_MERGE_READY
         reason_code = REASON_READY
@@ -149,6 +159,11 @@ def derive_production_disposition(
         attempt_count=attempt_count,
     )
 
+
+def _semantic_gate_present(issues) -> bool:
+    from bg3loc.dialogue_review import semantic_gate_present
+    return semantic_gate_present(issues)
+
 @dataclass(frozen=True, slots=True)
 class ProductionCompletionView:
     rows: tuple[ProductionDisposition, ...]
@@ -172,6 +187,8 @@ def _load_material_index(batch_plan_path: Path) -> dict[str, tuple[str, str]]:
         raise RuntimeError("batch plan batches must be a list")
 
     index: dict[str, tuple[str, str]] = {}
+    from bg3loc.dialogue_execution_contract import material_workspace_version, guard_material_family
+    manifest_version = material_workspace_version(batch_plan_path)
     seen_batches: set[str] = set()
 
     for batch in batches:
@@ -199,6 +216,7 @@ def _load_material_index(batch_plan_path: Path) -> dict[str, tuple[str, str]]:
                 row = json.loads(line)
                 if not isinstance(row, dict):
                     raise RuntimeError(f"{material_path}:{line_no}: expected JSON object")
+                guard_material_family(row, manifest_version)
                 uid = str(row.get("ContentUid", row.get("contentUid", "")))
                 if not uid:
                     raise RuntimeError(f"{material_path}:{line_no}: missing ContentUid")
@@ -233,6 +251,8 @@ def build_production_completion_view(
     batch_plan_path: str | Path,
     *,
     current_rule_set_version: str = QA_RULESET_VERSION,
+    stage3_validation_only: bool = False,
+    _connection: sqlite3.Connection | None = None,
 ) -> ProductionCompletionView:
     db = Path(db_path)
     plan = Path(batch_plan_path)
@@ -243,6 +263,11 @@ def build_production_completion_view(
     # must not bypass the material/current-input gate used by execute/finalize.
     manifest_path = plan.parent.parent / "production-manifest.json"
     context_workspace_verified = False
+    from bg3loc.dialogue_review import is_dialogue_workspace, validated_stage3_material
+    validated = None
+    if is_dialogue_workspace(db,_connection=_connection):
+        validated = validated_stage3_material(db, batch_plan=plan, validation_only=stage3_validation_only,_connection=_connection)
+        context_workspace_verified = True
     if manifest_path.is_file():
         declared = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
         if declared.get("schemaVersion") == "1.2":
@@ -254,9 +279,18 @@ def build_production_completion_view(
 
     material_index = _load_material_index(plan)
 
-    conn = sqlite3.connect(db)
+    conn = _connection if _connection is not None else sqlite3.connect(db)
     conn.row_factory = sqlite3.Row
-    with closing(conn):
+    with ExitStack() as sources, closing(conn) if _connection is None else nullcontext(conn):
+        if _connection is None:
+            conn.execute("BEGIN")
+        legacy = None
+        if validated is None:
+            from bg3loc.legacy_qa_material import LegacyQaMaterial
+            try:
+                legacy = sources.enter_context(LegacyQaMaterial(db, plan, connection=conn))
+            except (ValueError, KeyError, OSError):
+                pass  # No current QA can be certified from invalid material.
         bound_required = requires_input_binding(conn)
         if bound_required and not context_workspace_verified:
             raise RuntimeError("context completion requires its sealed production workspace")
@@ -284,6 +318,10 @@ def build_production_completion_view(
             qa_rows = []
 
         review_acceptance_rows = []
+        issues_by_uid = {}
+        if validated is not None and conn.execute("SELECT 1 FROM sqlite_master WHERE name='qa_issues'").fetchone():
+            for issue in conn.execute("SELECT content_uid,issue_code,severity,action,message,details_json FROM qa_issues ORDER BY content_uid,ordinal"):
+                issues_by_uid.setdefault(str(issue[0]), []).append({"issueCode":issue[1],"severity":issue[2],"action":issue[3],"message":issue[4],"details":tuple(json.loads(issue[5]))})
         review_table = conn.execute(
             "SELECT name FROM sqlite_master "
             "WHERE type='table' AND name='qa_review_resolutions'"
@@ -292,13 +330,24 @@ def build_production_completion_view(
             review_binding = stored_input_binding_expression(conn, "qa_review_resolutions")
             review_acceptance_rows = conn.execute(
                 f"""
-                SELECT content_uid, qa_rule_set_version, qa_input_hash,
+                SELECT content_uid, decision, qa_rule_set_version, qa_input_hash,
                        base_output_hash, resolved_output_hash, {review_binding} AS execution_input_hash
                 FROM qa_review_resolutions
-                WHERE decision = 'ACCEPT'
+                WHERE decision IN ('ACCEPT', 'REVISE')
                 ORDER BY resolution_id
                 """
             ).fetchall()
+
+        legacy_current = {}
+        if validated is None and legacy is not None:
+            qa_lookup = {str(q['content_uid']): q for q in qa_rows}
+            for state in execution_rows:
+                uid = str(state['content_uid'])
+                q = qa_lookup.get(uid)
+                try:
+                    legacy_current[uid] = q is not None and legacy.current(uid, state, q['qa_input_hash'])
+                except (ValueError, KeyError):
+                    legacy_current[uid] = False
 
     execution_by_uid = {
         str(row["content_uid"]): dict(row)
@@ -326,11 +375,11 @@ def build_production_completion_view(
             str(row["content_uid"]),
             str(row["qa_rule_set_version"]),
             str(row["qa_input_hash"]),
-            str(row["base_output_hash"]),
             str(row["resolved_output_hash"]),
         )
         for row in review_acceptance_rows
         if input_binding_current(row["execution_input_hash"], str(execution_by_uid.get(str(row["content_uid"]), {}).get("input_hash", "")), required=bound_required)
+        and (row["decision"] == "REVISE" or row["base_output_hash"] == row["resolved_output_hash"])
     }
 
     rows: list[ProductionDisposition] = []
@@ -365,17 +414,25 @@ def build_production_completion_view(
                 or not input_binding_current(qa_row["execution_input_hash"], str(state["input_hash"]), required=bound_required)
             ):
                 qa_status = QA_STATUS_STALE
+            if validated is not None and (type(state.get("translated_text")) is not str
+                    or hashlib.sha256(state["translated_text"].encode("utf-8")).hexdigest()!=current_output_hash):
+                # Every family in 1.3 must bind the actual output bytes, even
+                # when a corrupt writer leaves its declared hash unchanged.
+                qa_status = QA_STATUS_STALE
+            if validated is None and not legacy_current.get(uid, False):
+                qa_status = QA_STATUS_STALE
 
             qa_result = StoredQaResult(
                 content_uid=uid,
                 qa_status=qa_status,
                 route=str(qa_row["route"]),
-                issue_count=0,
+                issue_count=len(issues_by_uid.get(uid, ())),
                 qa_rule_set_version=str(qa_row["qa_rule_set_version"]),
                 qa_input_hash=str(qa_row["qa_input_hash"]),
                 output_hash=qa_output_hash,
                 checked_at=str(qa_row["checked_at"]),
-                issues=(),
+                issues=tuple(issues_by_uid.get(uid, ())),
+                execution_input_hash=qa_row["execution_input_hash"],
             )
 
         current_output_hash = str(state.get("output_hash") or "")
@@ -384,7 +441,6 @@ def build_production_completion_view(
             current_rule_set_version,
             qa_result.qa_input_hash if qa_result is not None else "",
             current_output_hash,
-            current_output_hash,
         ) in review_acceptances
 
         disposition = derive_production_disposition(
@@ -392,6 +448,7 @@ def build_production_completion_view(
             primary_category=category,
             qa_result=qa_result,
             human_review_accepted=human_review_accepted,
+            dialogue_context_required=validated is not None and "dialogueContext" in validated[uid],
         )
         rows.append(disposition)
         counts[disposition.disposition] += 1

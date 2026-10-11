@@ -1,0 +1,891 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "sourceLocale",
+    "targetLocale",
+    "inputs",
+    "classification",
+    "batching",
+    "execution",
+    "dialogueContext",
+    "finalizeAssets",
+    "corpus"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.3"
+    },
+    "sourceLocale": {
+      "const": "English"
+    },
+    "targetLocale": {
+      "type": "string",
+      "minLength": 1
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "extractManifest",
+        "source",
+        "researchMappings",
+        "ruleset",
+        "dialogueEvidence"
+      ],
+      "properties": {
+        "extractManifest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sha256",
+            "semanticFingerprint"
+          ],
+          "properties": {
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "semanticFingerprint": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sha256",
+            "semanticFingerprint"
+          ],
+          "properties": {
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "semanticFingerprint": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "researchMappings": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sha256",
+            "semanticFingerprint"
+          ],
+          "properties": {
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "semanticFingerprint": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "ruleset": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "sha256",
+            "version",
+            "fingerprint"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^(?!/)(?!.*[:\\\\])(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*[\\x00-\\x1f]).+$"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "fingerprint": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "dialogueEvidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "dialogue",
+            "node",
+            "occurrence",
+            "edge"
+          ],
+          "properties": {
+            "dialogue": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "sha256",
+                "semanticFingerprint"
+              ],
+              "properties": {
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "semanticFingerprint": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            },
+            "node": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "sha256",
+                "semanticFingerprint"
+              ],
+              "properties": {
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "semanticFingerprint": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            },
+            "occurrence": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "sha256",
+                "semanticFingerprint"
+              ],
+              "properties": {
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "semanticFingerprint": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            },
+            "edge": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "sha256",
+                "semanticFingerprint"
+              ],
+              "properties": {
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "semanticFingerprint": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            }
+          }
+        },
+        "storyLedger": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sha256",
+            "semanticFingerprint"
+          ],
+          "properties": {
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "semanticFingerprint": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "uiSkillUniverse": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sha256",
+            "semanticFingerprint"
+          ],
+          "properties": {
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "semanticFingerprint": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "unclassifiedDecisions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sha256",
+            "semanticFingerprint"
+          ],
+          "properties": {
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "semanticFingerprint": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "structuralDefinitions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sha256",
+            "semanticFingerprint"
+          ],
+          "properties": {
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "semanticFingerprint": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "structuralOccurrences": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sha256",
+            "semanticFingerprint"
+          ],
+          "properties": {
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "semanticFingerprint": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      }
+    },
+    "classification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "automaticPath",
+        "automaticSha256",
+        "resolvedPath",
+        "resolvedSha256",
+        "batchInputPath",
+        "counts"
+      ],
+      "properties": {
+        "automaticPath": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?!.*[:\\\\])(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*[\\x00-\\x1f]).+$"
+        },
+        "automaticSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "resolvedPath": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^(?!/)(?!.*[:\\\\])(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*[\\x00-\\x1f]).+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resolvedSha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "batchInputPath": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?!.*[:\\\\])(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*[\\x00-\\x1f]).+$"
+        },
+        "counts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "batching": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "batchPlan",
+        "batchPlanSha256",
+        "batchMaterialsFingerprint",
+        "batchPlanFingerprint",
+        "batchCount",
+        "classifiedInputCount",
+        "unresolvedCount",
+        "excludedCount"
+      ],
+      "properties": {
+        "batchPlan": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?!.*[:\\\\])(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*[\\x00-\\x1f]).+$"
+        },
+        "batchPlanSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "batchMaterialsFingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "batchPlanFingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "batchCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "classifiedInputCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unresolvedCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "excludedCount": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "database",
+        "databaseSchemaVersion",
+        "inventoryFingerprint",
+        "seededContentUidCount",
+        "batchPlanFingerprint",
+        "rulesetFingerprint",
+        "contextContract"
+      ],
+      "properties": {
+        "database": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?!.*[:\\\\])(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*[\\x00-\\x1f]).+$"
+        },
+        "databaseSchemaVersion": {
+          "const": "1.3"
+        },
+        "inventoryFingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "seededContentUidCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "batchPlanFingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "rulesetFingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "contextContract": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schemaVersion",
+            "families",
+            "contextContractFingerprint"
+          ],
+          "properties": {
+            "schemaVersion": {
+              "const": "production-context-contract/2"
+            },
+            "families": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "sameEntity",
+                "dialogue"
+              ],
+              "properties": {
+                "sameEntity": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "inputIdentityVersion",
+                        "schemaVersion",
+                        "policyVersion",
+                        "promptRendererVersion",
+                        "promptPolicyFingerprint",
+                        "sameEntityContextMaterialFingerprint",
+                        "contextContractFingerprint"
+                      ],
+                      "properties": {
+                        "inputIdentityVersion": {
+                          "const": "translation-input/2"
+                        },
+                        "schemaVersion": {
+                          "const": "same-entity-context/1"
+                        },
+                        "policyVersion": {
+                          "const": "b1-02-structural/2"
+                        },
+                        "promptRendererVersion": {
+                          "const": "same-entity-prompt/1"
+                        },
+                        "promptPolicyFingerprint": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        "sameEntityContextMaterialFingerprint": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        "contextContractFingerprint": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        }
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "dialogue": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "inputIdentityVersion",
+                    "schemaVersion",
+                    "policyVersion",
+                    "orderingVersion",
+                    "budgetContract",
+                    "promptRendererVersion",
+                    "promptSafetyVersion",
+                    "promptPolicyFingerprint",
+                    "semanticReviewPolicyVersion",
+                    "semanticReviewPolicyFingerprint",
+                    "dialogueContextMaterialFingerprint",
+                    "adapterVersion",
+                    "builderVersion"
+                  ],
+                  "properties": {
+                    "inputIdentityVersion": {
+                      "const": "translation-input/3"
+                    },
+                    "schemaVersion": {
+                      "const": "dialogue-context/1"
+                    },
+                    "policyVersion": {
+                      "const": "b1-03-policy-a/1"
+                    },
+                    "orderingVersion": {
+                      "const": "dialogue-node-uid-order/1"
+                    },
+                    "budgetContract": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "version",
+                        "countingVersion",
+                        "maxSourceCodepoints"
+                      ],
+                      "properties": {
+                        "version": {
+                          "const": "dialogue-budget/1"
+                        },
+                        "countingVersion": {
+                          "const": "unicode-codepoints/1"
+                        },
+                        "maxSourceCodepoints": {
+                          "const": 2000
+                        }
+                      }
+                    },
+                    "promptRendererVersion": {
+                      "const": "dialogue-prompt/1"
+                    },
+                    "promptSafetyVersion": {
+                      "const": "dialogue-safety/1"
+                    },
+                    "promptPolicyFingerprint": {
+                      "const": "fb880dd4171a85066d3b1ff70d7eb425aec0dcab7201c8715af29dded178c5f1"
+                    },
+                    "semanticReviewPolicyVersion": {
+                      "const": "dialogue-semantic-review/1"
+                    },
+                    "semanticReviewPolicyFingerprint": {
+                      "const": "36d93bd36d4dd90475f4c53eaaeb0f4742066114c7e087bb15ef7dae61983cbf"
+                    },
+                    "dialogueContextMaterialFingerprint": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "adapterVersion": {
+                      "const": "dialogue-public-evidence-adapter/1"
+                    },
+                    "builderVersion": {
+                      "const": "dialogue-context-builder/1"
+                    }
+                  }
+                }
+              }
+            },
+            "contextContractFingerprint": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      }
+    },
+    "dialogueContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "policyVersion",
+        "orderingVersion",
+        "budgetContract",
+        "summaryPath",
+        "summarySha256",
+        "summaryFingerprint",
+        "withContext",
+        "dialogueContextMaterialFingerprint",
+        "inputDigests",
+        "adapterVersion",
+        "builderVersion"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "dialogue-context/1"
+        },
+        "policyVersion": {
+          "const": "b1-03-policy-a/1"
+        },
+        "orderingVersion": {
+          "const": "dialogue-node-uid-order/1"
+        },
+        "budgetContract": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "version",
+            "countingVersion",
+            "maxSourceCodepoints"
+          ],
+          "properties": {
+            "version": {
+              "const": "dialogue-budget/1"
+            },
+            "countingVersion": {
+              "const": "unicode-codepoints/1"
+            },
+            "maxSourceCodepoints": {
+              "const": 2000
+            }
+          }
+        },
+        "summaryPath": {
+          "const": "dialogue-context-materialization-summary.json"
+        },
+        "summarySha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "summaryFingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "withContext": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dialogueContextMaterialFingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "inputDigests": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "source",
+            "dialogue",
+            "node",
+            "occurrence",
+            "edge",
+            "classification"
+          ],
+          "properties": {
+            "source": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "dialogue": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "node": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "occurrence": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "edge": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "classification": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "adapterVersion": {
+          "const": "dialogue-public-evidence-adapter/1"
+        },
+        "builderVersion": {
+          "const": "dialogue-context-builder/1"
+        }
+      }
+    },
+    "finalizeAssets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "assetFingerprint"
+      ],
+      "properties": {
+        "path": {
+          "const": "inputs/finalize-assets/manifest.json"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "assetFingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "sameEntityContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "policyVersion",
+        "adapterVersion",
+        "builderVersion",
+        "maxRelatedFields",
+        "maxContextChars",
+        "allowedCategories",
+        "promptConsumption",
+        "summaryPath",
+        "summarySha256",
+        "summaryFingerprint",
+        "withContext",
+        "sameEntityContextMaterialFingerprint",
+        "inputDigests",
+        "inputSha256"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "same-entity-context/1"
+        },
+        "policyVersion": {
+          "const": "b1-02-structural/2"
+        },
+        "adapterVersion": {
+          "const": "public-provenance-adapter/1"
+        },
+        "builderVersion": {
+          "const": "same-entity-context-builder/2"
+        },
+        "maxRelatedFields": {
+          "const": 4
+        },
+        "maxContextChars": {
+          "const": 4000
+        },
+        "allowedCategories": {
+          "const": [
+            "item",
+            "quest",
+            "skill_spell"
+          ]
+        },
+        "promptConsumption": {
+          "const": false
+        },
+        "summaryPath": {
+          "const": "context-materialization-summary.json"
+        },
+        "summarySha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "summaryFingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "withContext": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sameEntityContextMaterialFingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "inputDigests": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "normalizedSource",
+            "structuralDefinitions",
+            "structuralOccurrences",
+            "classification",
+            "holdInventory"
+          ],
+          "properties": {
+            "normalizedSource": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "structuralDefinitions": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "structuralOccurrences": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "classification": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "holdInventory": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "inputSha256": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "normalizedSource",
+            "structuralDefinitions",
+            "structuralOccurrences",
+            "classification"
+          ],
+          "properties": {
+            "normalizedSource": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "structuralDefinitions": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "structuralOccurrences": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "classification": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      }
+    },
+    "corpus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "appId",
+        "buildId",
+        "gameVersion",
+        "sourceEvidenceBindingFingerprint"
+      ],
+      "properties": {
+        "appId": {
+          "const": "1086940"
+        },
+        "buildId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "gameVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceEvidenceBindingFingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Documentation-only production manifest 1.3 contract; not supported by current runtime",
+  "$comment": "Legacy schemas 1.0/1.1/1.2 remain unchanged. Manifest cross-bindings, file seals, metadata and item identities must all verify."
+}

@@ -157,10 +157,17 @@ def build_final_merge_bridge(
     conn.row_factory = sqlite3.Row
     with closing(conn):
         state_rows = conn.execute(
-            "SELECT content_uid, translated_text, output_hash "
+            "SELECT content_uid, translated_text, output_hash, status "
             "FROM content_state ORDER BY content_uid"
         ).fetchall()
     state_by_uid = {str(row["content_uid"]): row for row in state_rows}
+    # Completion now detects stale bytes earlier. Do not silently turn a
+    # corrupt succeeded candidate into an empty/partial successful bridge.
+    for state in state_rows:
+        if state['status'] == 'succeeded':
+            from bg3loc.legacy_qa_material import actual_output_current
+            if not actual_output_current(state['translated_text'], state['output_hash']):
+                raise FinalMergeBridgeError(f"MERGE_READY output hash mismatch: {state['content_uid']}")
 
     accepted: list[dict[str, Any]] = []
     merge_ready_export: list[dict[str, Any]] = []
