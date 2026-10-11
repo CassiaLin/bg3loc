@@ -2,6 +2,23 @@
 
 [繁體中文（台灣）](CHANGELOG.zh-TW.md)
 
+## 1.4.0rc1 - Unreleased (local RC candidate)
+
+This release candidate has not been published or tagged. Its accepted first-version scope is Windows Basic with manual/external AI XLSX or JSONL returns, technical Validate, Rebuild, and the default workflow Dry-run. Apply/Rollback and in-game loading require separate authorization and acceptance.
+
+### Integrity and packaging
+- Canonical locale/material roles (A1), scan-bound PAK freshness (A6), and complete repack entry/SHA checks (A8).
+- Prepare-time basic-source-baseline/1 receipt and current validation/rebuild/install eligibility (M2-B1/B2); preserve historical results and isolate failed candidates. Old workspaces without a receipt require fresh Prepare/Validate while retaining edited returns.
+- Retain Provider error privacy (A2), Legacy Review/QA evidence binding (A5), full pytest CI configuration, and public synthetic sdist fixtures (A3/A4). These do not activate automatic Provider workflows.
+- Set package/runtime version to 1.4.0rc1 and new research-export producer stamp to bg3loc-1.4.0rc1; request IDs, prompt bytes, request fingerprints and frozen contracts remain unchanged. Existing exports/history are not rewritten.
+
+### Scope and pending gates
+- B1-03 stays OFF with production transport blocked. Production/Provider, B1-02 activation, Legacy Production Finalize (A7 implementation DEFERRED), native Linux/macOS and general dialogue safety are outside first Basic acceptance.
+- Four GitHub-hosted jobs remain NOT VERIFIED. HTTP WinError 10013 is environment-blocked, not PASS; Windows long paths, host symlink permissions and three research BOM schemas remain documented limitations.
+- Stable/release publication, Windows Native real-installation read-only acceptance, and separately authorized small-scope game-load/Apply/Rollback remain pending. Use one operator and retain original Extract/baseline paths.
+
+See docs/releases/v1.4.0rc1.md for the RC boundary. Earlier version entries below retain their original dates and acceptance evidence.
+
 ## 1.3.0 - 2026-09-28
 
 ### Added

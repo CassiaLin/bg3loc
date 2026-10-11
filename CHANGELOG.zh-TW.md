@@ -2,6 +2,23 @@
 
 [English](CHANGELOG.md)
 
+## 1.4.0rc1 - 尚未發布（本機 RC 候選版）
+
+此候選版尚未發布或建立 Tag。首版已核准範圍為 Windows Basic 手動／外部 AI XLSX 或 JSONL 回填、技術 Validate、Rebuild 與預設 workflow Dry-run。Apply／Rollback 與遊戲載入仍須另行授權及驗收。
+
+### 完整性與封裝
+- A1 canonical locale／素材角色、A6 scan 綁定 PAK freshness，以及 A8 全 entry／SHA repack 驗證。
+- M2-B1/B2 的 prepare-time basic-source-baseline/1 Receipt 與 current validation／rebuild／install eligibility；保留歷史成果、隔離失敗候選。舊 workspace 缺 Receipt 時須 fresh Prepare／Validate，先保留 edited returns。
+- 保留 A2 Provider 錯誤隱私、A5 Legacy Review／QA evidence 綁定、A3/A4 完整 pytest CI 設定與公開 synthetic sdist fixtures；不藉此啟用自動 Provider。
+- 套件／runtime 版本設為 1.4.0rc1，新研究匯出產物的 producer stamp 為 bg3loc-1.4.0rc1；request IDs、prompt bytes、request fingerprints 與 frozen contracts 不變，既有匯出／歷史資料不重寫。
+
+### 範圍與待完成門檻
+- B1-03 維持 OFF、production transport blocked。Production／Provider、B1-02 activation、Legacy Production Finalize（A7 implementation DEFERRED）、Linux／macOS Native 與一般 dialogue safety 不屬首版驗收。
+- 四個 GitHub-hosted jobs 仍 NOT VERIFIED；HTTP WinError 10013 是 environment-blocked，不算 PASS。Windows 長路徑、host symlink 權限與三份 research BOM schema 限制保留。
+- Stable／正式發布、Windows Native 真實安裝唯讀驗收，以及另行授權的小範圍 game-load／Apply／Rollback 仍待完成。維持單一操作者及原始 Extract／baseline 路徑。
+
+RC 邊界參閱 docs/releases/v1.4.0rc1.zh-TW.md；下方既有版本的日期與驗收證據保持原貌。
+
 ## 1.3.0 - 2026-09-28
 
 ### 新增功能

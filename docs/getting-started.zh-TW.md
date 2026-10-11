@@ -16,7 +16,7 @@ bg3loc --version
 bg3loc project init --help
 ```
 
-沒有 3.12 時用已安裝的支援版本 `python -m venv .venv`。若 PowerShell 禁止 activation，可直接呼叫 `.\.venv\Scripts\python.exe` 與 `.\.venv\Scripts\bg3loc.exe`，不必修改整台電腦的安全設定。目前 checkout 回報 1.3.0，但版本字串不能證明下載產物已含這次修改；未來 RC wheel 必須核對來源與 checksum。
+沒有 3.12 時用已安裝的支援版本 `python -m venv .venv`。若 PowerShell 禁止 activation，可直接呼叫 `.\.venv\Scripts\python.exe` 與 `.\.venv\Scripts\bg3loc.exe`，不必修改整台電腦的安全設定。目前本機 RC 候選版回報 1.4.0rc1，尚未正式發布；但版本字串不能證明下載產物已含這次修改；每個候選 wheel 都必須核對確切來源與 checksum；參閱 docs/releases/v1.4.0rc1.zh-TW.md 的本機 RC 說明。
 
 從 [Norbyte LSLib 專案](https://github.com/Norbyte/lslib) 自行取得工具，解壓整份 distribution 並保留 runtime 檔案；找 **Divine.exe**，不是 GUI converter。設定實際路徑：
 

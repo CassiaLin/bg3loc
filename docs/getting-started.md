@@ -16,7 +16,7 @@ bg3loc --version
 bg3loc project init --help
 ```
 
-If the Python launcher cannot find 3.12, use an installed supported Python with `python -m venv .venv`. If PowerShell blocks activation, run `.\.venv\Scripts\python.exe` and `.\.venv\Scripts\bg3loc.exe` directly instead of changing machine security settings. The current checkout reports 1.3.0; that version string alone does not certify that a downloaded release includes these changes. A future RC wheel must be identified by its release source and checksum.
+If the Python launcher cannot find 3.12, use an installed supported Python with `python -m venv .venv`. If PowerShell blocks activation, run `.\.venv\Scripts\python.exe` and `.\.venv\Scripts\bg3loc.exe` directly instead of changing machine security settings. This local RC candidate reports 1.4.0rc1 and has not been formally released; that version string alone does not certify that a downloaded release includes these changes. Each candidate wheel must be identified by its exact source and checksum; see the local RC notes in docs/releases/v1.4.0rc1.md.
 
 Obtain LSLib from the [Norbyte project](https://github.com/Norbyte/lslib). Extract the whole tool distribution and keep its runtime files together. Locate **Divine.exe**, not the GUI converter, and set its actual path:
 

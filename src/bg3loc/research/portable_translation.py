@@ -26,7 +26,7 @@ PACKAGE_SALT = "b1-02-phase2a-portable-v1"
 CANONICAL_PILOT_FINGERPRINT = "a9ad899d2bd2d64b4bf971af2b354aeec4e8012a97ef45bb17cb5ca2e9d783b1"
 CANONICAL_SAMPLE_COUNTS = {"skill_spell": 40, "item": 40, "quest": 20}
 ORDERING_POLICY = "sort SHA256(sampleId + variant + packageSalt); assign sequential requestId"
-CREATED_WITH_VERSION = "bg3loc-1.3.0"
+CREATED_WITH_VERSION = "bg3loc-1.4.0rc1"
 PUBLIC_FIELDS = (
     "requestId", "sourceLocale", "targetLocale", "category", "fieldRole",
     "instructions", "sourceText", "context", "promptText",
