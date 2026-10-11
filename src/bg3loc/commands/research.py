@@ -1089,6 +1089,9 @@ def extract_and_generate_story_ledger(
             lslib_dir = cand_dir
 
     if os.name == "nt" and lslib_dir is not None:
+        ps_ledger_path = str(ledger_path).replace("\\", "\\\\")
+        ps_oldtext_path = str(oldtext_path).replace("\\", "\\\\")
+        ps_game_dir = str(game_dir).replace("\\", "\\\\")
         ps_script = f'''
 $ErrorActionPreference = 'Stop'
 [Reflection.Assembly]::LoadFrom('{lslib_dir / "Newtonsoft.Json.dll"}') | Out-Null
@@ -1110,15 +1113,15 @@ function StoryDomain([string]$family,[string]$constructor,[string]$category,[str
   return 'Unknown'
 }}
 
-$lw = [System.IO.StreamWriter]::new('{str(ledger_path).replace("\\", "\\\\")}', $false, [System.Text.UTF8Encoding]::new($false))
-$ow = [System.IO.StreamWriter]::new('{str(oldtext_path).replace("\\", "\\\\")}', $false, [System.Text.UTF8Encoding]::new($false))
+$lw = [System.IO.StreamWriter]::new('{ps_ledger_path}', $false, [System.Text.UTF8Encoding]::new($false))
+$ow = [System.IO.StreamWriter]::new('{ps_oldtext_path}', $false, [System.Text.UTF8Encoding]::new($false))
 $lw.WriteLine("ContentUid,PakName,InternalPath,ResourceFamily,ResourceFormat,StoryDomain,NodeId,AttributeRole,HasSpeaker,HasDialog,HasQuest,IsOldText")
 $ow.WriteLine("ContentUid,PakName,InternalPath,NodeId,AttributeRole,StoryDomain")
 
 $paks = @("Gustav.pak", "Shared.pak", "GustavX.pak", "Patch8_HotFix9.pak")
 
 foreach ($pName in $paks) {{
-    $pPath = Join-Path (Join-Path '{str(game_dir).replace("\\", "\\\\")}' "Data") $pName
+    $pPath = Join-Path (Join-Path '{ps_game_dir}' "Data") $pName
     if (-not (Test-Path $pPath)) {{ continue }}
     $pkg = [LSLib.LS.PackageReader]::new().Read($pPath, $false)
     try {{
