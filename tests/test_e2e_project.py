@@ -93,7 +93,7 @@ class E2EProjectConfigTests(unittest.TestCase):
             self.assertEqual(state["stages"]["config"]["status"], "completed")
             self.assertEqual(state["stages"]["scan"]["status"], "ready")
             self.assertEqual(state["projectConfigSha256"], config.sha256)
-            self.assertEqual(state_path(config), root / "workspace" / "e2e" / "workflow-state.json")
+            self.assertEqual(state_path(config), (root / "workspace" / "e2e" / "workflow-state.json").resolve(strict=False))
 
     def test_project_init_check_and_status_not_started(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -323,9 +323,12 @@ class TestProductionPrepare(unittest.TestCase):
         shutil.move(output, relocated)
         binding = verify_production_workspace(relocated)
         self.assertEqual(binding.workspace, relocated.resolve())
-        self.assertEqual(binding.batch_plan, relocated / "batches" / "batch-plan.json")
-        self.assertEqual(binding.database, relocated / "execution.sqlite3")
-        self.assertEqual(binding.ruleset, relocated / "inputs" / "ruleset.json")
+        self.assertEqual(binding.batch_plan, (relocated / "batches" / "batch-plan.json").resolve(strict=True))
+        self.assertEqual(binding.database, (relocated / "execution.sqlite3").resolve(strict=True))
+        self.assertEqual(binding.ruleset, (relocated / "inputs" / "ruleset.json").resolve(strict=True))
+        for actual in (binding.batch_plan, binding.database, binding.ruleset):
+            self.assertTrue(actual.is_relative_to(binding.workspace))
+            self.assertTrue(actual.samefile(relocated / actual.relative_to(binding.workspace)))
 
 
 if __name__ == "__main__":

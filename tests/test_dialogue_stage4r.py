@@ -198,7 +198,7 @@ def test_finalize_barrier_release_failure_retracts_published_output(tmp_path,mon
 
 def replay_fixture(tmp_path):
     package=tmp_path/'replay';prepare_semantic_replay(package,request(context()),ruleset())
-    rows=[json.loads(line) for line in (package/'chatgpt-translation-requests.jsonl').read_text().splitlines()]
+    rows=[json.loads(line) for line in (package/'chatgpt-translation-requests.jsonl').read_text(encoding="utf-8").splitlines()]
     responses=tmp_path/'responses.jsonl';responses.write_bytes(b''.join(canonical_bytes({'requestId':r['requestId'],'translationText':'虛構譯文'})+b'\n' for r in rows))
     return package,rows,responses
 
@@ -211,7 +211,7 @@ def test_anonymous_formal_replay_and_blind_import_never_verdict(tmp_path):
     assert not any('condition'in r or 'variantId'in r for r in rows)
     result=import_semantic_replay_responses(package,responses,translation_source='external fictional source')
     assert result['safetyRegression']=='NOT_EVALUATED'
-    review=json.loads((package/'blind-review-ready.jsonl').read_text())
+    review=json.loads((package/'blind-review-ready.jsonl').read_text(encoding="utf-8"))
     assert set(review['translations'])=={'variant-1','variant-2'} and 'condition' not in review
     assert all(v is None for v in review['assessment'].values())
 
@@ -232,7 +232,7 @@ def test_replay_import_rejects_bad_outputs_without_blind_publication(tmp_path,ba
 
 def test_review_schema_source_translation_binding_and_limited_scope(tmp_path):
     package,_,responses=replay_fixture(tmp_path);import_semantic_replay_responses(package,responses,translation_source='fixture')
-    review=json.loads((package/'blind-review-ready.jsonl').read_text())
+    review=json.loads((package/'blind-review-ready.jsonl').read_text(encoding="utf-8"))
     review['assessment']={'sourceMeaningPreserved':{'variant-1':True,'variant-2':True},'semanticDriftVariant':'neither',
         'sourceAbsentInformation':{'variant-1':False,'variant-2':False},'alternativesAsSequence':{'variant-1':False,'variant-2':False},'reviewer':'fixture','notes':'known-risk case only'}
     completed=tmp_path/'completed.jsonl';completed.write_bytes(canonical_bytes(review)+b'\n')
@@ -243,7 +243,7 @@ def test_review_schema_source_translation_binding_and_limited_scope(tmp_path):
 
 def test_changed_original_blind_review_cannot_rebind_completed_review(tmp_path):
     package,_,responses=replay_fixture(tmp_path);import_semantic_replay_responses(package,responses,translation_source='fixture')
-    review=json.loads((package/'blind-review-ready.jsonl').read_text());review['targetSource']='changed source'
+    review=json.loads((package/'blind-review-ready.jsonl').read_text(encoding="utf-8"));review['targetSource']='changed source'
     (package/'blind-review-ready.jsonl').write_bytes(canonical_bytes(review)+b'\n')
     completed=tmp_path/'completed.jsonl';completed.write_bytes(canonical_bytes(review)+b'\n')
     with pytest.raises(ValueError,match='seal mismatch'):validate_semantic_replay_review(package,completed)
